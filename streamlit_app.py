@@ -6,137 +6,149 @@ from datetime import datetime
 import pytz
 
 # 網頁基本設定
-st.set_page_config(page_title="當沖狙擊雷達", page_icon="⚡", layout="centered")
-st.title("⚡ 當沖高勝率狙擊雷達")
+st.set_page_config(page_title="職業當沖系統", page_icon="⚡", layout="centered")
+st.title("⚡ 職業級：戰略當沖決策系統")
+st.caption("融合 VWAP加權均價、ATR波動率與 RVOL爆量指標")
 
 tw_tz = pytz.timezone('Asia/Taipei')
 st.caption(f"⏱️ 系統更新時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')}")
 
-# --- 嚴格風控設定區 ---
-st.markdown("### 🛡️ 交易風控設定")
+# --- 嚴格風控與成本設定區 ---
+st.markdown("### 🛡️ 資金控管與紀律設定")
 col1, col2 = st.columns(2)
-capital_limit = col1.number_input("當沖總資金上限 (元)", min_value=10000, value=500000, step=50000)
-min_win_rate = col2.number_input("最低要求勝率 (%)", min_value=50, max_value=100, value=80, step=5)
+capital_limit = col1.number_input("總資金上限 (元)", value=500000, step=50000)
+min_win_rate = col2.number_input("歷史勝率要求 (%)", min_value=50, max_value=100, value=80, step=5)
+
+col3, col4 = st.columns(2)
+fee_discount = col3.number_input("券商手續費折數", value=2.8, step=0.1)
+min_rvol = col4.number_input("最低爆量倍數 (RVOL)", value=1.2, step=0.1)
 
 st.markdown("---")
 
-tab1, tab2 = st.tabs(["🎯 80%勝率狙擊名單", "📈 個股 5 分 K 線解析"])
+tab1, tab2 = st.tabs(["🎯 AI 戰略選股雷達", "📈 職業 5 分 K 線 (內建 VWAP)"])
 
 # ==========================================
-# 分頁 1：嚴格篩選雷達
+# 分頁 1：戰略主題篩選雷達 (加入 ATR 與 RVOL)
 # ==========================================
 with tab1:
-    st.markdown("### 🔎 盤面高勝率標的掃描")
-    st.caption(f"篩選條件：過去一個月當沖獲利機率 ≥ {min_win_rate}%，且為爆量強勢股。")
+    st.markdown("### 🔎 主題強勢股掃描")
     
-    # 擴大觀察池以增加選股基數
-    day_trade_pool = {
-        "2603.TW": "長榮 (航運)", "3231.TW": "緯創 (AI)", "2382.TW": "廣達 (AI)", 
-        "2317.TW": "鴻海 (權值)", "3034.TW": "聯詠 (IC)", "2609.TW": "陽明 (航運)",
-        "2368.TW": "金像電 (PCB)", "3017.TW": "奇鋐 (散熱)", "3324.TW": "雙鴻 (散熱)",
-        "2330.TW": "台積電 (權值)"
+    strategic_pool = {
+        "2634.TW": "漢翔", "2314.TW": "台揚", "8033.TWO": "雷虎", 
+        "2009.TW": "第一銅", "1605.TW": "華新", "8390.TWO": "金益鼎",
+        "2365.TW": "昆盈", "4562.TWO": "穎漢", "6188.TWO": "廣明", 
+        "2371.TW": "大同", "1608.TW": "華榮", "1609.TW": "大亞", "1618.TW": "合機"
     }
 
     @st.cache_data(ttl=300)
-    def scan_strict_candidates(pool, capital, required_win_rate):
+    def scan_pro_candidates(pool, capital, required_win_rate, discount, rvol_req):
         results = []
         for sym, desc in pool.items():
             try:
                 stock = yf.Ticker(sym)
-                # 抓取過去一個月資料進行「勝率回測」
-                hist_1mo = stock.history(period="1mo")
-                if len(hist_1mo) < 15: continue
+                hist = stock.history(period="1mo")
+                if len(hist) < 15: continue
                 
-                # 【勝率計算邏輯】：盤中最高價大於開盤價 1% (代表當沖有足夠肉可以吃)
-                # True/False 陣列
-                win_days = (hist_1mo['High'] - hist_1mo['Open']) / hist_1mo['Open'] >= 0.01 
+                # 計算勝率
+                win_days = (hist['High'] - hist['Open']) / hist['Open'] >= 0.01 
                 win_rate = (win_days.sum() / len(win_days)) * 100
+                if win_rate < required_win_rate: continue
                 
-                # 嚴格剔除低勝率
-                if win_rate < required_win_rate:
-                    continue
-                
-                today = hist_1mo.iloc[-1]
-                yesterday = hist_1mo.iloc[-2]
-                
-                # 計算動能
-                amplitude = ((today['High'] - today['Low']) / yesterday['Close']) * 100
-                vol_ratio = today['Volume'] / yesterday['Volume'] if yesterday['Volume'] > 0 else 1
+                today = hist.iloc[-1]
                 curr_price = today['Close']
                 
-                # 【資金控管邏輯】：計算 50 萬可以買多少
+                # 限制單張低於 5 萬與資金上限
                 cost_per_lot = curr_price * 1000
+                if cost_per_lot > 50000: continue
                 affordable_lots = int(capital // cost_per_lot)
-                affordable_shares = int(capital // curr_price)
+                if affordable_lots < 1: continue
                 
-                trade_advice = f"可打 {affordable_lots} 張" if affordable_lots >= 1 else f"資金不足1張，限打零股 {affordable_shares} 股"
+                # 計算 RVOL (相對成交量)
+                avg_vol_10d = hist['Volume'].rolling(10).mean().iloc[-2]
+                rvol = today['Volume'] / avg_vol_10d if avg_vol_10d > 0 else 1
+                if rvol < rvol_req: continue # 剔除沒有爆量的死水股
                 
-                # 只推薦有動能的股票
-                if amplitude > 2.0 or vol_ratio > 1.2:
-                    results.append({
-                        "symbol": sym, "desc": desc, "price": curr_price,
-                        "win_rate": win_rate, "amplitude": amplitude,
-                        "trade_advice": trade_advice, "cost_per_lot": cost_per_lot
-                    })
+                # 計算 ATR (真實波動幅度，取近 14 天)
+                hist['TR'] = hist['High'] - hist['Low']
+                atr = hist['TR'].rolling(14).mean().iloc[-1]
+                
+                # 制定交易計畫 (盈虧比 1:2)
+                stop_loss = curr_price - (atr * 0.5) # 跌破半個波動幅停損
+                take_profit = curr_price + (atr * 1.0) # 賺取一個波動幅停利
+                
+                # 計算淨利
+                est_gross_profit = affordable_lots * 1000 * (atr * 1.0)
+                fee_rate = 0.001425 * (discount / 10)
+                friction = affordable_lots * ((curr_price * 1000 * fee_rate * 2) + (curr_price * 1000 * 0.0015))
+                net_profit = est_gross_profit - friction
+                if net_profit <= 0: continue
+                
+                results.append({
+                    "symbol": sym, "desc": desc, "price": curr_price,
+                    "win_rate": win_rate, "rvol": rvol, "atr": atr,
+                    "lots": affordable_lots, "net_profit": net_profit,
+                    "sl": stop_loss, "tp": take_profit
+                })
             except Exception:
                 pass
-        
-        # 依勝率排序，高的排前面
-        return sorted(results, key=lambda x: x['win_rate'], reverse=True)
+        return sorted(results, key=lambda x: x['rvol'], reverse=True) # 依爆量程度排序
 
-    with st.spinner("嚴格過濾低勝率標命中，請稍候..."):
-        targets = scan_strict_candidates(day_trade_pool, capital_limit, min_win_rate)
+    with st.spinner("AI 正在計算 RVOL 與 ATR 波動率..."):
+        targets = scan_pro_candidates(strategic_pool, capital_limit, min_win_rate, fee_discount, min_rvol)
         
     if targets:
-        st.success(f"🎉 篩選完成！今日共有 **{len(targets)}** 檔股票符合超過 {min_win_rate}% 勝率條件：")
+        st.success(f"🔥 盤面激戰中！共 **{len(targets)}** 檔標的爆量且符合高勝率：")
         for t in targets:
             with st.container():
                 st.markdown(f"#### 🎯 **{t['symbol']} {t['desc']}**")
                 c1, c2, c3 = st.columns(3)
-                c1.metric("即時股價", f"${t['price']:.1f}")
-                c2.metric("歷史當沖勝率", f"{t['win_rate']:.1f}%")
-                c3.metric("今日振幅", f"{t['amplitude']:.1f}%")
+                c1.metric("即時股價", f"${t['price']:.2f}")
+                c2.metric("爆量倍數 (RVOL)", f"{t['rvol']:.1f}x")
+                c3.metric("勝率", f"{t['win_rate']:.0f}%")
                 
-                st.info(f"💰 **資金分配建議**：{t['trade_advice']} (單張成本約 ${t['cost_per_lot']:,.0f})")
+                st.info(f"📋 **操盤計畫 (盈虧比 1:2)**：\n"
+                        f"🟢 建議停利：**${t['tp']:.2f}** (預估實賺 ${t['net_profit']:,.0f})\n"
+                        f"🔴 嚴格停損：**${t['sl']:.2f}**\n"
+                        f"💼 資金分配：滿載可打 **{t['lots']} 張**")
                 st.markdown("---")
     else:
-        st.error(f"⚠️ **目前盤面無任何股票符合「勝率大於 {min_win_rate}%」且具備動能的嚴格條件！**\n\n職業當沖客守則：沒有好獵物就不開槍，今日建議空手觀望，保護本金。")
+        st.warning(f"👀 目前無標的達標。可能原因：盤面量能萎縮 (RVOL < {min_rvol}) 或價差被手續費吃光。等待才是最好的交易！")
 
 # ==========================================
-# 分頁 2：個股 5 分 K 線解析
+# 分頁 2：職業 5 分 K 線解析 (導入 VWAP)
 # ==========================================
 with tab2:
-    st.markdown("### 🔍 進場點微觀視角 (5 分鐘 K 線)")
-    ticker = st.text_input("輸入欲觀察的標的 (如 2603.TW)", value="2603.TW")
+    st.markdown("### 🔍 當沖神針：VWAP 均價線解析")
+    ticker = st.text_input("輸入欲觀察的戰略股 (如 2371.TW)", value="2371.TW")
     
-    if st.button("🔄 更新短線走勢"):
+    if st.button("🔄 更新 5 分 K 線與 VWAP"):
         st.cache_data.clear()
         
     if ticker:
         try:
             s = yf.Ticker(ticker)
-            hist_5m = s.history(period="2d", interval="5m")
+            hist_5m = s.history(period="1d", interval="5m") # 只抓今日，計算當日 VWAP
             
             if not hist_5m.empty:
                 curr_price = hist_5m['Close'].iloc[-1]
-                hist_5m['MA5'] = hist_5m['Close'].rolling(5).mean()
-                hist_5m['MA12'] = hist_5m['Close'].rolling(12).mean()
+                
+                # 計算當日 VWAP (成交量加權平均價)
+                hist_5m['Typical_Price'] = (hist_5m['High'] + hist_5m['Low'] + hist_5m['Close']) / 3
+                hist_5m['VWAP'] = (hist_5m['Typical_Price'] * hist_5m['Volume']).cumsum() / hist_5m['Volume'].cumsum()
                 
                 fig = go.Figure()
                 fig.add_trace(go.Candlestick(x=hist_5m.index, open=hist_5m['Open'], high=hist_5m['High'], low=hist_5m['Low'], close=hist_5m['Close'], name='5分K'))
-                fig.add_trace(go.Scatter(x=hist_5m.index, y=hist_5m['MA5'], mode='lines', name='MA5', line=dict(color='blue', width=1)))
-                fig.add_trace(go.Scatter(x=hist_5m.index, y=hist_5m['MA12'], mode='lines', name='MA12', line=dict(color='orange', width=1)))
+                fig.add_trace(go.Scatter(x=hist_5m.index, y=hist_5m['VWAP'], mode='lines', name='VWAP (機構均價)', line=dict(color='purple', width=2, dash='dot')))
                 
-                fig.update_layout(height=350, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_white")
+                fig.update_layout(height=400, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_white")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                last_ma5 = hist_5m['MA5'].iloc[-1]
-                last_ma12 = hist_5m['MA12'].iloc[-1]
-                if last_ma5 > last_ma12 and curr_price > last_ma5:
-                    st.success("🟢 **5分K動能**：多頭排列，適合順勢作多。")
-                elif last_ma5 < last_ma12 and curr_price < last_ma5:
-                    st.error("🔴 **5分K動能**：空頭排列，慎防下殺。")
+                last_vwap = hist_5m['VWAP'].iloc[-1]
+                if curr_price > last_vwap:
+                    st.success(f"🟢 **大戶多頭**：目前股價 (${curr_price:.2f}) 站上 VWAP (${last_vwap:.2f})，市場平均成本為多方掌控，偏多操作。")
+                elif curr_price < last_vwap:
+                    st.error(f"🔴 **大戶空頭**：目前股價 (${curr_price:.2f}) 跌破 VWAP (${last_vwap:.2f})，套牢賣壓重，反彈偏空操作。")
                 else:
-                    st.warning("🟡 **5分K動能**：均線糾結，動能不明確。")
+                    st.warning("🟡 **多空交戰**：股價黏著 VWAP，方向未明。")
         except Exception:
-            st.error("無法取得資料。")
+            st.error("無法取得資料，請確認今日是否開盤或代號正確。")
