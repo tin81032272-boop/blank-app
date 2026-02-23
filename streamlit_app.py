@@ -5,21 +5,18 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz
 
-# --- 初始化 Session State (用於動態按鈕調整參數) ---
 if 'win_rate' not in st.session_state:
     st.session_state.win_rate = 80
 if 'rvol' not in st.session_state:
     st.session_state.rvol = 1.2
 
 def relax_params():
-    """一鍵放寬參數的 Callback 函數"""
     st.session_state.win_rate = 50
     st.session_state.rvol = 0.8
 
-# --- 網頁與視覺主題設定 ---
 st.set_page_config(page_title="Pro 當沖指揮中心", page_icon="⚡", layout="centered")
 
-# 自訂 CSS (優化排版、加入模擬按鈕與更明確的色彩層級)
+# 加入 JavaScript 的一鍵複製功能
 st.markdown("""
 <style>
     .big-font { font-size:22px !important; font-weight: bold; color: #1E90FF; }
@@ -27,8 +24,8 @@ st.markdown("""
     .badge-green { background-color: #00CC96; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
     .badge-gray { background-color: #555555; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
     .card { background-color: #f8f9fa; padding: 18px; border-radius: 12px; border-left: 6px solid #1E90FF; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
-    .broker-btn { background-color: #FF8C00; color: white; padding: 6px 12px; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: bold; float: right; transition: 0.2s;}
-    .broker-btn:hover { background-color: #E67E22; color: white; }
+    .broker-btn { background-color: #D32F2F; color: white; padding: 6px 12px; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: bold; float: right; transition: 0.2s;}
+    .broker-btn:hover { background-color: #B71C1C; color: white; }
     .highlight-red { color: #FF4B4B; font-weight: bold; font-size: 16px; }
     .highlight-green { color: #00CC96; font-weight: bold; font-size: 16px; }
 </style>
@@ -36,7 +33,6 @@ st.markdown("""
 
 st.title("⚡ Pro 當沖指揮中心")
 
-# --- 台灣時間與市場狀態燈 ---
 tw_tz = pytz.timezone('Asia/Taipei')
 now = datetime.now(tw_tz)
 current_time_str = now.strftime('%Y-%m-%d %H:%M:%S')
@@ -50,30 +46,20 @@ if is_open:
 else:
     st.markdown(f"### 🔴 **市場已收盤/休市** | {current_time_str}")
 
-# --- 參數設定區 ---
 with st.expander("⚙️ 打擊區參數設定 (點擊展開/收合)", expanded=False):
-    st.markdown("💡 *調整參數後，系統會即時重新掃描*")
     col1, col2 = st.columns(2)
     capital_limit = col1.number_input("總資金上限 (元)", value=500000, step=50000)
-    # 綁定 session_state
     min_win_rate = col2.slider("要求勝率 (%)", min_value=50, max_value=100, step=5, key="win_rate")
     
     col3, col4 = st.columns(2)
     max_price = col3.number_input("單張股價上限 (元)", value=150.0, step=10.0)
-    # 綁定 session_state
     min_rvol = col4.slider("爆量倍數 (RVOL)", min_value=0.5, max_value=5.0, step=0.1, key="rvol")
-    
-    # 隱藏手續費輸入框，底層直接寫死新光證券的 2.8 折
     fee_discount = 2.8
 
 st.markdown("---")
 
-# --- 雙分頁設計 ---
 tab1, tab2 = st.tabs(["🎯 戰情雷達 (主力動向)", "📈 戰術圖表 (台股專屬 K 線)"])
 
-# ==========================================
-# 分頁 1：視覺化戰情雷達
-# ==========================================
 with tab1:
     strategic_pool = {
         "2634.TW": "漢翔", "2314.TW": "台揚", "8033.TWO": "雷虎", 
@@ -120,13 +106,14 @@ with tab1:
                 net_profit = est_gross_profit - friction
                 if net_profit <= 0: continue
                 
-                # 回測期望值模擬 (勝率 * 平均獲利 - 敗率 * 平均虧損)
                 ev = (win_rate/100 * est_gross_profit) - ((1 - win_rate/100) * (affordable_lots * 1000 * atr * 0.5))
-                
                 status_badge = "<span class='badge-red'>今日強勢 ⬆</span>" if today['Close'] > hist.iloc[-2]['Close'] else "<span class='badge-green'>今日弱勢 ⬇</span>"
                 
+                # 清理代號，去掉 .TW 或 .TWO 方便複製
+                clean_sym = sym.replace('.TW', '').replace('.TWO', '')
+                
                 results.append({
-                    "symbol": sym, "desc": desc, "price": curr_price,
+                    "symbol": sym, "clean_sym": clean_sym, "desc": desc, "price": curr_price,
                     "win_rate": win_rate, "rvol": rvol, "atr": atr,
                     "lots": affordable_lots, "net_profit": net_profit,
                     "sl": sl, "tp": tp, "status": status_badge, "ev": ev
@@ -141,15 +128,14 @@ with tab1:
     if targets:
         st.success(f"🎯 鎖定 **{len(targets)}** 檔狙擊目標：")
         for t in targets:
-            # 決定 EV 的顏色 (大於 0 顯示紅色，小於 0 顯示綠色)
             ev_color = '#FF4B4B' if t['ev'] > 0 else '#00CC96'
             
-            # UI 優化：強化停損停利視覺、加入策略期望值與模擬下單按鈕
+            # 使用 onclick 執行 JavaScript 複製代號並跳出提醒
             st.markdown(f"""
             <div class="card">
                 <div style="margin-bottom: 10px;">
-                    <span class="big-font">{t['symbol']} {t['desc']}</span> &nbsp; {t['status']}
-                    <a href="#" class="broker-btn">⚡ 帶入券商下單</a>
+                    <span class="big-font">{t['clean_sym']} {t['desc']}</span> &nbsp; {t['status']}
+                    <a href="javascript:void(0);" onclick="navigator.clipboard.writeText('{t['clean_sym']}'); alert('已複製代號 {t['clean_sym']}！\\n請切換至【富貴角10號】貼上下單。');" class="broker-btn">⚡ 複製代號 (富貴角)</a>
                 </div>
                 <div>
                     <b>最新股價：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
@@ -157,20 +143,16 @@ with tab1:
                     <b>歷史勝率：</b> {t['win_rate']:.0f}%
                 </div>
                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
-                    🛒 <b>操作紀律：</b> 停利目標 <span class="highlight-red">${t['tp']:.2f}</span> / 停損防守 <span class="highlight-green">${t['sl']:.2f}</span><br>
-                    💰 <b>資金配置：</b> 可打 {t['lots']} 張 (預估淨利 ${t['net_profit']:,.0f})<br>
+                    🛒 <b>操作紀律：</b> 停利 <span class="highlight-red">${t['tp']:.2f}</span> / 停損 <span class="highlight-green">${t['sl']:.2f}</span><br>
+                    💰 <b>資金配置：</b> 可打 {t['lots']} 張 (估淨利 ${t['net_profit']:,.0f})<br>
                     📊 <b>策略期望值 (EV)：</b> <span style="color: {ev_color}; font-weight: bold;">${t['ev']:,.0f}</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
     else:
         st.warning("📉 目前無符合條件之標的。")
-        # UX 優化：提供一鍵放寬標準的按鈕
         st.button("⚡ 一鍵套用寬鬆策略 (勝率50%, RVOL 0.8x)", on_click=relax_params, type="primary")
 
-# ==========================================
-# 分頁 2：台股專屬紅綠 K 線 + 壓力支撐線
-# ==========================================
 with tab2:
     st.markdown("### 📊 戰略圖表 (VWAP + Pivot 支撐壓力)")
     ticker = st.text_input("輸入欲觀察的代號 (如 1609.TW)", value="1609.TW")
@@ -187,7 +169,6 @@ with tab2:
             if not hist_5m.empty and len(hist_1d) >= 2:
                 curr_price = hist_5m['Close'].iloc[-1]
                 
-                # --- 計算 Pivot Points (加入 R2, S2 涵蓋突破情境) ---
                 yest = hist_1d.iloc[-2]
                 pivot = (yest['High'] + yest['Low'] + yest['Close']) / 3
                 r1 = (2 * pivot) - yest['Low']
@@ -195,56 +176,35 @@ with tab2:
                 r2 = pivot + (yest['High'] - yest['Low'])
                 s2 = pivot - (yest['High'] - yest['Low'])
                 
-                # --- 計算 VWAP ---
                 hist_5m['Typical_Price'] = (hist_5m['High'] + hist_5m['Low'] + hist_5m['Close']) / 3
                 hist_5m['VWAP'] = (hist_5m['Typical_Price'] * hist_5m['Volume']).cumsum() / hist_5m['Volume'].cumsum()
                 
-                # --- 繪製專業圖表 ---
                 fig = go.Figure()
-                
                 fig.add_trace(go.Candlestick(
                     x=hist_5m.index, open=hist_5m['Open'], high=hist_5m['High'], low=hist_5m['Low'], close=hist_5m['Close'], 
                     name='5分K',
                     increasing_line_color='#FF4B4B', increasing_fillcolor='#FF4B4B', 
                     decreasing_line_color='#00CC96', decreasing_fillcolor='#00CC96'  
                 ))
+                fig.add_trace(go.Scatter(x=hist_5m.index, y=hist_5m['VWAP'], mode='lines', name='VWAP', line=dict(color='#9B59B6', width=2)))
                 
-                fig.add_trace(go.Scatter(x=hist_5m.index, y=hist_5m['VWAP'], mode='lines', name='VWAP (機構均價)', line=dict(color='#9B59B6', width=2)))
-                
-                # 加入 R1, S1, R2, S2
                 fig.add_hline(y=r2, line_dash="dot", line_color="#FF4B4B", opacity=0.4, annotation_text="強壓力 (R2)", annotation_position="top right")
                 fig.add_hline(y=r1, line_dash="dash", line_color="#FF4B4B", annotation_text="今日壓力 (R1)", annotation_position="top right")
                 fig.add_hline(y=s1, line_dash="dash", line_color="#00CC96", annotation_text="今日支撐 (S1)", annotation_position="bottom right")
                 fig.add_hline(y=s2, line_dash="dot", line_color="#00CC96", opacity=0.4, annotation_text="強支撐 (S2)", annotation_position="bottom right")
                 
-                fig.update_layout(
-                    height=500, margin=dict(l=0,r=0,t=0,b=0), 
-                    xaxis_rangeslider_visible=False, template="plotly_dark",
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    hovermode="x unified" # UX優化：讓游標懸浮時資訊更易讀
-                )
+                fig.update_layout(height=500, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # --- 多空判定面板 (修復價格突破邏輯) ---
                 last_vwap = hist_5m['VWAP'].iloc[-1]
                 st.markdown("#### ⚡ 盤中動能判定")
                 
                 if curr_price > last_vwap:
-                    # 邏輯優化：判斷是否已突破 R1
-                    if curr_price < r1:
-                        target_msg = f"目標上看壓力線 **${r1:.2f}**"
-                    else:
-                        target_msg = f"已強勢突破 R1，下一目標上看 **${r2:.2f}**"
+                    target_msg = f"目標上看壓力線 **${r1:.2f}**" if curr_price < r1 else f"已強勢突破 R1，下一目標上看 **${r2:.2f}**"
                     st.markdown(f"<span class='badge-red'>大戶作多</span> 股價 (${curr_price:.2f}) 站上 VWAP (${last_vwap:.2f})，{target_msg}。", unsafe_allow_html=True)
-                
                 elif curr_price < last_vwap:
-                    # 邏輯優化：判斷是否已跌破 S1
-                    if curr_price > s1:
-                        target_msg = f"小心回測支撐線 **${s1:.2f}**"
-                    else:
-                        target_msg = f"已弱勢跌破 S1，下探強支撐 **${s2:.2f}**"
+                    target_msg = f"小心回測支撐線 **${s1:.2f}**" if curr_price > s1 else f"已弱勢跌破 S1，下探強支撐 **${s2:.2f}**"
                     st.markdown(f"<span class='badge-green'>大戶倒貨</span> 股價 (${curr_price:.2f}) 跌破 VWAP (${last_vwap:.2f})，{target_msg}。", unsafe_allow_html=True)
-                
                 else:
                     st.markdown(f"<span class='badge-gray'>多空交戰</span> 股價黏著 VWAP，等待方向表態。", unsafe_allow_html=True)
                     
