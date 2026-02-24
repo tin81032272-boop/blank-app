@@ -38,7 +38,7 @@ with colB:
         st.cache_data.clear()
 
 tw_tz = pytz.timezone('Asia/Taipei')
-st.caption(f"系統時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')} | 修復：手機版 HTML 渲染器衝突")
+st.caption(f"系統時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')} | 修復：手機版 HTML 渲染器衝突與圖表繪製")
 
 # =====================================================
 # 雙引擎股池設定
@@ -354,10 +354,60 @@ with tab2:
                     st.success("✅ 目前技術面與風控皆完美符合做多紀律！")
 
                 st.markdown("#### 📊 專業技術圖表檢視")
+                
+                # 
+                
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
                 fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='日K'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=hist.index, y=hist['10MA'], name='10MA', line=dict(color='#FFD700', width=1)), row=1, col=1)
                 fig.add_trace(go.Scatter(x=hist.index, y=hist['20MA'], name='20MA (月線)', line=dict(color='#9B59B6', width=2)), row=1, col=1)
                 
                 macd_colors = ['#FF4B4B' if val > 0 else '#00CC96' for val in (hist['MACD'] - hist['Signal'])]
-                fig.add_trace(go.Bar(x=hist.index, y=(hist['MACD'] - hist['Signal']), marker_
+                
+                # --- 修復重點：完成中斷的 MACD 繪圖邏輯 ---
+                fig.add_trace(go.Bar(x=hist.index, y=(hist['MACD'] - hist['Signal']), marker_color=macd_colors, name='MACD 柱狀圖'), row=2, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['MACD'], name='MACD', line=dict(color='#1E90FF', width=1)), row=2, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['Signal'], name='Signal', line=dict(color='#FF8C00', width=1)), row=2, col=1)
+
+                fig.update_layout(height=650, margin=dict(l=0, r=0, t=30, b=0), showlegend=False, 
+                                  xaxis_rangeslider_visible=False, template="plotly_dark")
+                
+                # 渲染圖表
+                st.plotly_chart(fig, use_container_width=True)
+
+                # 顯示相關新聞 (如果有撈取到的話)
+                if news_data:
+                    st.markdown("#### 📰 相關市場新聞")
+                    for news in news_data[:3]:
+                        title = news.get('title', '無標題新聞')
+                        link = news.get('link', '#')
+                        st.markdown(f"<div class='news-box'>🔗 <a href='{link}' target='_blank' style='color: #1E90FF; text-decoration: none;'>{title}</a></div>", unsafe_allow_html=True)
+                        
+            else:
+                st.error("📉 找不到該標的之歷史資料，請確認代碼是否輸入正確。")
+
+# =====================================================
+# TAB 3: 實戰資產日誌 (補齊結構)
+# =====================================================
+with tab3:
+    st.markdown("### 📊 實戰資產日誌")
+    st.info("💡 此區塊目前為展示用數據。未來可串接資料庫（如 SQLite 或 Google Sheets）來記錄你真實的交易點位與損益。")
+    
+    mock_data = pd.DataFrame({
+        "交易日": ["2026-02-20", "2026-02-23"],
+        "市場": ["🇹🇼 台股", "🇺🇸 美股"],
+        "代號": ["2330.TW", "NVDA"],
+        "買入均價": [850, 120],
+        "持有股數": [1000, 50],
+        "當前市價": [875, 128],
+        "未實現損益": ["+25,000", "+400"]
+    })
+    st.dataframe(mock_data, use_container_width=True, hide_index=True)
+
+# =====================================================
+# TAB 4: 專業回測引擎 (補齊結構)
+# =====================================================
+with tab4:
+    st.markdown("### 🧪 專業回測引擎")
+    st.warning("🚧 此模組尚在開發中。未來將支援自定義策略（例如：5MA 上穿 20MA、RSI 黃金交叉）的歷史勝率回測功能。")
+
