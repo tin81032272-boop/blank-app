@@ -2,81 +2,32 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime
 import pytz
+import os
 
-# --- 初始化參數與 Session State ---
-if 'win_rate' not in st.session_state: st.session_state.win_rate = 60
-if 'rvol' not in st.session_state: st.session_state.rvol = 1.2
-if 'ai_mode' not in st.session_state: st.session_state.ai_mode = False
-
-def enable_ai_mode():
-    st.session_state.ai_mode = True
-    st.session_state.win_rate = 65 
-    st.session_state.rvol = 1.5    
-    st.cache_data.clear()
-
-def reset_and_refresh():
-    st.session_state.ai_mode = False
-    st.cache_data.clear()
-
-def relax_params():
-    st.session_state.ai_mode = False
-    st.session_state.win_rate = 50
-    st.session_state.rvol = 0.8
-
-st.set_page_config(page_title="實戰當沖指揮中心", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="波段狙擊事業管理", page_icon="🚀", layout="wide")
 
 st.markdown("""
 <style>
     .big-font { font-size:22px !important; font-weight: bold; color: #1E90FF; }
-    .badge-red { background-color: #FF4B4B; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .badge-green { background-color: #00CC96; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .badge-gray { background-color: #555555; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .badge-gold { background-color: #FFD700; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .card { background-color: #f8f9fa; padding: 18px; border-radius: 12px; border-left: 6px solid #FF8C00; margin-bottom: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
+    .card { background-color: #f8f9fa; padding: 18px; border-radius: 12px; border-left: 6px solid #00CC96; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
+    .metric-box { background-color: #1E1E1E; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #333;}
     .highlight-red { color: #FF4B4B; font-weight: bold; font-size: 16px; }
     .highlight-green { color: #00CC96; font-weight: bold; font-size: 16px; }
     .highlight-blue { color: #1E90FF; font-weight: bold; font-size: 16px; }
-    .metric-box { background-color: #1E1E1E; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #333;}
-    .progress-text { font-size: 18px; font-weight: bold; color: #FF8C00; margin-bottom: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
-colA, colB, colC = st.columns([1.5, 1, 1])
-with colA:
-    st.title("⚡ 實戰當沖中心")
-with colB:
-    st.write("") 
-    st.button("🔄 全局刷新", use_container_width=True, on_click=reset_and_refresh)
-with colC:
-    st.write("")
-    st.button("🤖 AI 快篩", use_container_width=True, type="primary", on_click=enable_ai_mode)
-
+st.title("🚀 短線波段狙擊系統 (Swing Trade)")
 tw_tz = pytz.timezone('Asia/Taipei')
 now = datetime.now(tw_tz)
-is_open = now.replace(hour=9, minute=0, second=0) <= now <= now.replace(hour=13, minute=30, second=0) and now.weekday() < 5
-status_msg = "🟢 盤中交易中" if is_open else "🔴 市場已收盤"
-st.caption(f"{status_msg} | 系統時間：{now.strftime('%Y-%m-%d %H:%M:%S')}")
-if is_open and now.hour == 9 and now.minute < 15:
-    st.warning("⚠️ **開盤前 15 分鐘警告**：免費報價可能有延遲，請務必搭配券商軟體確認即時現價與量能！")
+st.caption(f"系統時間：{now.strftime('%Y-%m-%d %H:%M')} | 策略核心：日 K 線均線糾結突破、MACD 波段發動")
 
-st.markdown("### 🏆 資金水位與進度")
-col_curr, col_target = st.columns(2)
-# 實戰預設資金調整為 50 萬
-current_capital = col_curr.number_input("今日作戰總資金 (元)", value=500000, step=50000)
-target_capital = col_target.number_input("波段終極目標 (元)", value=1000000, step=50000)
+tab1, tab2, tab3 = st.tabs(["🎯 波段起漲雷達 (AI選股)", "📈 日 K 戰術圖表 (指標檢視)", "📊 翻倍進度與日誌"])
 
-progress = min(current_capital / target_capital, 1.0)
-st.progress(progress)
-st.markdown("---")
-
-with st.expander("⚙️ 手動參數設定 (啟動 AI 模式時將自動覆蓋)", expanded=False):
-    c1, c2 = st.columns(2)
-    min_win_rate = c1.slider("要求勝率 (%)", 30, 100, step=5, key="win_rate")
-    min_rvol = c2.slider("爆量倍數 (RVOL)", 0.5, 5.0, step=0.1, key="rvol")
-    fee_discount = 2.8
-
+# 擴充波段優質股池 (加入中大型成長股與強勢題材)
 strategic_pool = {
     "2330.TW": "台積電", "2317.TW": "鴻海", "2454.TW": "聯發科", "2382.TW": "廣達", "3231.TW": "緯創",
     "2376.TW": "技嘉", "2356.TW": "英業達", "2324.TW": "仁寶", "2353.TW": "宏碁", "2357.TW": "華碩",
@@ -97,223 +48,221 @@ def smart_ticker_lookup(user_input):
         if user_input == name or user_input in sym: return sym
     return user_input + ".TW"
 
-tab1, tab2 = st.tabs(["🎯 AI 戰情雷達", "📈 全景戰術圖表"])
-
 # ==========================================
-# 分頁 1：戰情雷達 (張數/股數 雙軌顯示)
+# 分頁 1：波段起漲雷達
 # ==========================================
 with tab1:
-    @st.cache_data(ttl=300)
-    def scan_pro_candidates(pool, capital, required_win_rate, discount, rvol_req):
+    st.markdown("### 🔍 尋找「剛剛發動」的短線波段股")
+    st.caption("過濾條件：股價站上 10MA (短線生命線)、MACD 翻紅或黃金交叉、成交量放大。")
+    
+    col1, col2 = st.columns(2)
+    capital = col1.number_input("預計投入單檔資金 (元)", value=3000, step=1000)
+    vol_multiplier = col2.slider("日均量放大倍數要求", 1.0, 3.0, value=1.2, step=0.1)
+    
+    @st.cache_data(ttl=3600) # 盤後看，快取一小時即可
+    def scan_swing_candidates(pool, cap, vol_req):
         results = []
         for sym, desc in pool.items():
             try:
                 stock = yf.Ticker(sym)
-                hist = stock.history(period="1mo")
-                if len(hist) < 15: continue
+                hist = stock.history(period="3mo") # 抓3個月來算均線
+                if len(hist) < 30: continue
                 
-                win_days = (hist['High'] - hist['Open']) / hist['Open'] >= 0.01 
-                win_rate = (win_days.sum() / len(win_days)) * 100
-                if win_rate < required_win_rate: continue
+                # 計算波段均線
+                hist['5MA'] = hist['Close'].rolling(5).mean()
+                hist['10MA'] = hist['Close'].rolling(10).mean()
+                hist['20MA'] = hist['Close'].rolling(20).mean() # 月線
+                
+                # 計算 MACD
+                exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
+                exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
+                hist['MACD'] = exp1 - exp2
+                hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
+                hist['Hist'] = hist['MACD'] - hist['Signal']
                 
                 today = hist.iloc[-1]
+                yesterday = hist.iloc[-2]
                 curr_price = today['Close']
                 
-                affordable_shares = int(capital // curr_price)
-                if affordable_shares < 1: continue 
-                # 實戰張數計算 (1張=1000股)
-                affordable_lots = affordable_shares // 1000
+                # 【波段核心濾網】
+                # 1. 股價必須在 10MA 之上 (代表短線趨勢偏多)
+                if curr_price < today['10MA']: continue
                 
-                avg_vol_10d = hist['Volume'].rolling(10).mean().iloc[-2]
-                rvol = today['Volume'] / avg_vol_10d if avg_vol_10d > 0 else 1
-                if rvol < rvol_req: continue 
+                # 2. 均線量能：今日量大於 5 日均量
+                avg_vol_5d = hist['Volume'].rolling(5).mean().iloc[-2]
+                vol_ratio = today['Volume'] / avg_vol_5d if avg_vol_5d > 0 else 1
+                if vol_ratio < vol_req: continue
                 
+                # 3. MACD 趨勢向上 (柱狀圖翻紅或持續擴大)
+                if today['Hist'] < 0 and today['Hist'] <= yesterday['Hist']: continue
+                
+                # 買進策略計算
+                shares = int(cap // curr_price)
+                if shares < 1: continue
+                
+                # ATR 計算停損停利 (波段抓比較大)
                 hist['TR'] = hist['High'] - hist['Low']
                 atr = hist['TR'].rolling(14).mean().iloc[-1]
                 
-                buy_price = curr_price - (atr * 0.15)
-                sl = buy_price - (atr * 0.5) 
-                tp = buy_price + (atr * 1.0) 
+                # 波段建議：靠近 5MA 買進最安全，跌破 10MA 停損
+                buy_zone = f"${today['5MA']:.1f} ~ ${curr_price:.1f}"
+                sl = today['10MA'] * 0.99 # 跌破 10MA 再多抓 1% 緩衝
+                tp = curr_price + (atr * 3) # 波段抓 3 個 ATR 的大獲利
                 
-                trade_value = affordable_shares * buy_price
-                est_gross_profit = affordable_shares * (atr * 1.0)
+                # 評分：多頭排列 (5>10>20) 分數最高
+                trend_score = 0
+                if today['5MA'] > today['10MA'] > today['20MA']: trend_score += 50
+                trend_score += min(vol_ratio * 10, 30)
+                if today['MACD'] > today['Signal']: trend_score += 20
                 
-                fee = max(1, int(trade_value * 0.001425 * (discount / 10)))
-                tax = int(trade_value * 0.003)
-                friction = (fee * 2) + tax
-                net_profit = est_gross_profit - friction
-                if net_profit <= 0: continue 
-                
-                ev = (win_rate/100 * est_gross_profit) - ((1 - win_rate/100) * (affordable_shares * atr * 0.5))
-                ai_score = (win_rate * 0.4) + (rvol * 20) + (min(ev, 500) / 10) 
-                
-                status_badge = "<span class='badge-red'>今日強勢 ⬆</span>" if today['Close'] > hist.iloc[-2]['Close'] else "<span class='badge-green'>今日弱勢 ⬇</span>"
+                status = "🔥 多頭爆發" if today['5MA'] > today['10MA'] > today['20MA'] else "📈 底部起漲"
                 clean_sym = sym.replace('.TW', '').replace('.TWO', '')
                 
                 results.append({
                     "symbol": sym, "clean_sym": clean_sym, "desc": desc, "price": curr_price,
-                    "buy_price": buy_price,
-                    "win_rate": win_rate, "rvol": rvol, "atr": atr, 
-                    "shares": affordable_shares, "lots": affordable_lots,
-                    "net_profit": net_profit, "sl": sl, "tp": tp, "status": status_badge, "ev": ev,
-                    "friction": friction, "ai_score": ai_score
+                    "buy_zone": buy_zone, "sl": sl, "tp": tp, "shares": shares,
+                    "vol_ratio": vol_ratio, "trend_score": trend_score, "status": status,
+                    "ma5": today['5MA'], "ma10": today['10MA'], "ma20": today['20MA']
                 })
             except: pass
-            
-        return sorted(results, key=lambda x: x['ai_score'], reverse=True)
+        return sorted(results, key=lambda x: x['trend_score'], reverse=True)
 
-    loading_msg = "🤖 AI 深度快篩中，尋找開盤動能..." if st.session_state.ai_mode else "⚡ 啟動量化引擎掃描中..."
-    with st.spinner(loading_msg):
-        targets = scan_pro_candidates(strategic_pool, current_capital, st.session_state.win_rate, fee_discount, st.session_state.rvol)
-        
-    if targets:
-        if st.session_state.ai_mode:
-            st.success(f"🤖 AI 快篩完成！嚴選 **{len(targets)}** 檔最佳實戰目標：")
+    if st.button("🚀 啟動波段 AI 雷達", type="primary", use_container_width=True):
+        with st.spinner("掃描日K線級別趨勢，尋找波段黑馬..."):
+            targets = scan_swing_candidates(strategic_pool, capital, vol_multiplier)
+            
+        if targets:
+            st.success(f"🎯 成功鎖定 **{len(targets)}** 檔波段發動標的：")
+            for t in targets:
+                with st.container():
+                    st.markdown(f"""
+                    <div class="card">
+                        <div style="margin-bottom: 10px;">
+                            <span class="big-font">{t['clean_sym']} {t['desc']}</span> &nbsp; <span class='badge-red'>{t['status']}</span>
+                            <div style="float: right; color: #888;">AI 趨勢評分: {t['trend_score']:.0f}</div>
+                        </div>
+                        <div>
+                            <b>最新日收盤：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
+                            <b>量能放大：</b> {t['vol_ratio']:.1f}x &nbsp;|&nbsp; 
+                            <b>月線(20MA)：</b> ${t['ma20']:.1f}
+                        </div>
+                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
+                            💼 <b>波段紀律：</b> 佈局區間 <span class="highlight-blue">{t['buy_zone']}</span> | 目標停利 <span class="highlight-red">${t['tp']:.1f}</span> | 防守 10MA <span class="highlight-green">${t['sl']:.1f}</span><br>
+                            💰 <b>零股配置：</b> 此資金量可佈局 <b>{t['shares']} 股</b>，適合持有 3~10 個交易日。
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.code(t['clean_sym'], language="text")
         else:
-            st.success(f"🎯 鎖定 **{len(targets)}** 檔符合條件標的：")
-            
-        for i, t in enumerate(targets):
-            ev_color = '#FF4B4B' if t['ev'] > 0 else '#00CC96'
-            crown_badge = "<span class='badge-gold'>👑 AI 首選</span> &nbsp;" if st.session_state.ai_mode and i < 2 else ""
-            
-            # 張數顯示邏輯：大於1張用藍字顯示張數，小於1張只顯示股數
-            if t['lots'] >= 1:
-                lot_display = f"<span class='highlight-blue'>{t['lots']} 張</span> (或 {t['shares']} 股)"
-            else:
-                lot_display = f"不足 1 張，限打 <span class='highlight-blue'>{t['shares']} 股</span>"
-
-            with st.container():
-                st.markdown(f"""
-                <div class="card">
-                    <div style="margin-bottom: 10px;">
-                        {crown_badge}<span class="big-font">{t['clean_sym']} {t['desc']}</span> &nbsp; {t['status']}
-                    </div>
-                    <div>
-                        <b>即時現價：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
-                        <b>爆量：</b> {t['rvol']:.1f}x &nbsp;|&nbsp; 
-                        <b>勝率：</b> {t['win_rate']:.0f}%
-                    </div>
-                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
-                        🛒 <b>掛單策略：</b> 建議買點 <span class="highlight-blue">${t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">${t['tp']:.2f}</span> | 停損 <span class="highlight-green">${t['sl']:.2f}</span><br>
-                        💰 <b>購買張數：</b> 可打 {lot_display} <br>
-                        📊 <b>估計淨利：</b> ${t['net_profit']:,.0f} (EV: <span style="color: {ev_color};">${t['ev']:,.0f}</span>)
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.caption("👇 點右側複製代號 ➔ 切換富貴角 ➔ 掛出『建議買點』價格")
-                st.code(t['clean_sym'], language="text")
-                st.markdown("<br>", unsafe_allow_html=True)
-    else:
-        st.warning("📉 目前無符合條件標的，盤勢不明，切勿躁進。")
-        st.button("⚡ 放寬策略", on_click=relax_params, type="primary")
+            st.warning("📉 目前無符合波段起漲條件之標的，大盤可能處於回檔或震盪期，建議持幣觀望。")
 
 # ==========================================
-# 分頁 2：全景戰術圖表 & 即時指標
+# 分頁 2：日 K 戰術圖表
 # ==========================================
 with tab2:
-    user_search = st.text_input("🔍 快速分析 (輸入代號或名稱，如：2330 或 台積電)", placeholder="支援中文搜尋...")
+    st.markdown("### 📊 日 K 線波段解析")
+    user_search = st.text_input("輸入欲分析的股票 (如: 2330 或 台積電)", placeholder="支援中文搜尋...", value="2330")
     
-    st.markdown("##### 🎛️ 圖表顯示控制")
-    t1, t2, t3 = st.columns(3)
-    show_vwap = t1.toggle("顯示 VWAP", value=True)
-    show_bb = t2.toggle("顯示布林通道", value=False)
-    show_pivot = t3.toggle("顯示壓力支撐", value=False)
-
-    chart_list = []
     if user_search:
         parsed_ticker = smart_ticker_lookup(user_search)
-        if parsed_ticker: chart_list.append({"symbol": parsed_ticker, "desc": user_search})
-    elif targets:
-        chart_list = targets
-        st.info(f"👉 自動展開今日精選標的之 5 分 K 線：")
-
-    if chart_list:
-        for item in chart_list:
-            sym = item['symbol']
+        if parsed_ticker:
             try:
-                s = yf.Ticker(sym)
-                hist_5m = s.history(period="2d", interval="5m") 
-                hist_1d = s.history(period="5d", interval="1d")
+                s = yf.Ticker(parsed_ticker)
+                hist = s.history(period="6mo", interval="1d") # 波段看 6 個月
                 
-                if not hist_5m.empty and len(hist_1d) >= 2:
-                    yest = hist_1d.iloc[-2]
-                    pivot = (yest['High'] + yest['Low'] + yest['Close']) / 3
-                    r1 = (2 * pivot) - yest['Low']
-                    s1 = (2 * pivot) - yest['High']
+                if not hist.empty:
+                    # 計算均線
+                    hist['5MA'] = hist['Close'].rolling(5).mean()
+                    hist['10MA'] = hist['Close'].rolling(10).mean()
+                    hist['20MA'] = hist['Close'].rolling(20).mean()
                     
-                    today_date = hist_5m.index[-1].date()
-                    today_data = hist_5m[hist_5m.index.date == today_date].copy()
-                    if today_data.empty: continue
+                    # 計算 MACD
+                    exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
+                    exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
+                    hist['MACD'] = exp1 - exp2
+                    hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
+                    hist['Hist'] = hist['MACD'] - hist['Signal']
                     
-                    curr_price = today_data['Close'].iloc[-1]
+                    st.markdown(f"#### 📌 {user_search} ({parsed_ticker.replace('.TW','')}) 日 K 線趨勢")
                     
-                    today_data['Typical'] = (today_data['High'] + today_data['Low'] + today_data['Close']) / 3
-                    today_data['VWAP'] = (today_data['Typical'] * today_data['Volume']).cumsum() / today_data['Volume'].cumsum()
-                    last_vwap = today_data['VWAP'].iloc[-1]
-                    
-                    delta = hist_5m['Close'].diff()
-                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                    rs = gain / loss
-                    hist_5m['RSI'] = 100 - (100 / (1 + rs))
-                    last_rsi = hist_5m['RSI'].iloc[-1]
-                    
-                    exp1 = hist_5m['Close'].ewm(span=12, adjust=False).mean()
-                    exp2 = hist_5m['Close'].ewm(span=26, adjust=False).mean()
-                    hist_5m['MACD'] = exp1 - exp2
-                    hist_5m['Signal'] = hist_5m['MACD'].ewm(span=9, adjust=False).mean()
-                    last_macd = hist_5m['MACD'].iloc[-1]
-                    last_signal = hist_5m['Signal'].iloc[-1]
-                    
-                    hist_5m['MA20'] = hist_5m['Close'].rolling(window=20).mean()
-                    hist_5m['BB_std'] = hist_5m['Close'].rolling(window=20).std()
-                    hist_5m['BB_upper'] = hist_5m['MA20'] + (hist_5m['BB_std'] * 2)
-                    hist_5m['BB_lower'] = hist_5m['MA20'] - (hist_5m['BB_std'] * 2)
-                    
-                    today_data['BB_upper'] = hist_5m['BB_upper'].loc[today_data.index]
-                    today_data['BB_lower'] = hist_5m['BB_lower'].loc[today_data.index]
-
-                    st.markdown(f"#### 📌 {item.get('desc', sym)} ({sym.replace('.TW','')})")
-                    
+                    # 繪製主圖 (K線 + 均線)
                     fig = go.Figure()
                     fig.add_trace(go.Candlestick(
-                        x=today_data.index, open=today_data['Open'], high=today_data['High'], low=today_data['Low'], close=today_data['Close'], 
-                        name='5分K', increasing_line_color='#FF4B4B', increasing_fillcolor='#FF4B4B', decreasing_line_color='#00CC96', decreasing_fillcolor='#00CC96'  
+                        x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], 
+                        name='日K', increasing_line_color='#FF4B4B', increasing_fillcolor='#FF4B4B', decreasing_line_color='#00CC96', decreasing_fillcolor='#00CC96'  
                     ))
+                    fig.add_trace(go.Scatter(x=hist.index, y=hist['5MA'], mode='lines', name='5MA (週線)', line=dict(color='#1E90FF', width=1.5)))
+                    fig.add_trace(go.Scatter(x=hist.index, y=hist['10MA'], mode='lines', name='10MA (雙週線)', line=dict(color='#FFD700', width=1.5)))
+                    fig.add_trace(go.Scatter(x=hist.index, y=hist['20MA'], mode='lines', name='20MA (月線)', line=dict(color='#9B59B6', width=2)))
                     
-                    if show_vwap:
-                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['VWAP'], mode='lines', name='VWAP', line=dict(color='#9B59B6', width=2)))
-                    
-                    if show_bb:
-                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['BB_upper'], mode='lines', line=dict(color='rgba(173, 216, 230, 0.4)', width=1), name='布林上軌'))
-                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['BB_lower'], mode='lines', line=dict(color='rgba(173, 216, 230, 0.4)', width=1), fill='tonexty', fillcolor='rgba(173, 216, 230, 0.1)', name='布林下軌'))
-                    
-                    if show_pivot:
-                        fig.add_hline(y=r1, line_dash="dash", line_color="#FF4B4B", annotation_text="壓力(R1)")
-                        fig.add_hline(y=s1, line_dash="dash", line_color="#00CC96", annotation_text="支撐(S1)")
-                    
-                    fig.update_layout(height=400, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                    fig.update_layout(height=450, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_dark")
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    m1, m2, m3 = st.columns(3)
+                    # 繪製副圖 (MACD)
+                    st.markdown("##### 📉 MACD 波段動能")
+                    fig_macd = go.Figure()
+                    # 判斷 MACD 柱狀圖顏色 (大於0為紅，小於0為綠)
+                    colors = ['#FF4B4B' if val > 0 else '#00CC96' for val in hist['Hist']]
+                    fig_macd.add_trace(go.Bar(x=hist.index, y=hist['Hist'], marker_color=colors, name='MACD 柱狀體'))
+                    fig_macd.add_trace(go.Scatter(x=hist.index, y=hist['MACD'], mode='lines', name='MACD (快線)', line=dict(color='#1E90FF', width=1.5)))
+                    fig_macd.add_trace(go.Scatter(x=hist.index, y=hist['Signal'], mode='lines', name='Signal (慢線)', line=dict(color='#FFD700', width=1.5)))
+                    fig_macd.update_layout(height=200, margin=dict(l=0,r=0,t=0,b=0), template="plotly_dark")
+                    st.plotly_chart(fig_macd, use_container_width=True)
                     
-                    if curr_price > last_vwap: vwap_status = "<span class='badge-red'>多方控盤</span>"
-                    elif curr_price < last_vwap: vwap_status = "<span class='badge-green'>空方壓制</span>"
-                    else: vwap_status = "<span class='badge-gray'>多空交戰</span>"
-                    m1.markdown(f"<div class='metric-box'><b>VWAP 趨勢</b><br>{vwap_status}</div>", unsafe_allow_html=True)
+                    # 趨勢判定
+                    curr_c = hist['Close'].iloc[-1]
+                    ma5, ma10, ma20 = hist['5MA'].iloc[-1], hist['10MA'].iloc[-1], hist['20MA'].iloc[-1]
                     
-                    if last_rsi > 70: rsi_status = "<span class='badge-red'>🔥過熱超買</span>"
-                    elif last_rsi < 30: rsi_status = "<span class='badge-green'>❄️超跌超賣</span>"
-                    else: rsi_status = "<span class='badge-gray'>區間震盪</span>"
-                    m2.markdown(f"<div class='metric-box'><b>RSI ({last_rsi:.1f})</b><br>{rsi_status}</div>", unsafe_allow_html=True)
-                    
-                    if last_macd > last_signal and last_macd > 0: macd_status = "<span class='badge-red'>🚀 多頭發散</span>"
-                    elif last_macd < last_signal and last_macd < 0: macd_status = "<span class='badge-green'>📉 空頭發散</span>"
-                    elif last_macd > last_signal: macd_status = "<span class='badge-red'>黃金交叉</span>"
-                    else: macd_status = "<span class='badge-green'>死亡交叉</span>"
-                    m3.markdown(f"<div class='metric-box'><b>MACD 動能</b><br>{macd_status}</div>", unsafe_allow_html=True)
+                    if curr_c > ma5 > ma10 > ma20:
+                        st.success("🟢 **波段多頭排列**：股價站上所有均線，且均線向上發散，是持股抱牢或逢回加碼的最佳型態！")
+                    elif curr_c < ma20:
+                        st.error("🔴 **波段空頭格局**：股價跌破月線 (20MA)，趨勢轉弱，波段操作者應嚴格執行停損或觀望。")
+                    else:
+                        st.warning("🟡 **波段整理中**：股價在均線間震盪，等待帶量突破表態。")
+            except:
+                st.error("無法取得圖表資料。")
 
-                    st.markdown("<br><hr style='border:1px dashed #444;'><br>", unsafe_allow_html=True)
-            except Exception as e:
-                pass
+# ==========================================
+# 分頁 3：翻倍進度與日誌 (保留最受歡迎功能)
+# ==========================================
+with tab3:
+    st.markdown("### 🏆 3千 ➔ 50萬 翻倍進度表")
+    LOG_FILE = "swing_trade_log.csv"
+    if os.path.exists(LOG_FILE):
+        df_log = pd.read_csv(LOG_FILE)
+    else:
+        df_log = pd.DataFrame({"日期": [datetime.now(tw_tz).strftime('%Y-%m-%d')], "投入金額": [3000.0], "波段損益": [0.0], "備註": ["初始資金"]})
+
+    total_pnl = df_log["波段損益"].sum()
+    current_capital = 3000 + total_pnl
+    target = 500000
+    progress = min(current_capital / target, 1.0)
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("目前總資金", f"${current_capital:,.0f}")
+    c2.metric("波段累計損益", f"${total_pnl:,.0f}", f"{(total_pnl/3000)*100:.1f}% 總報酬")
+    c3.metric("距離目標還差", f"${(target - current_capital):,.0f}")
+    
+    st.progress(progress)
+    
+    st.markdown("#### 📝 填寫波段平倉紀錄")
+    edited_df = st.data_editor(
+        df_log, num_rows="dynamic",
+        column_config={
+            "日期": st.column_config.TextColumn("平倉日期", required=True),
+            "投入金額": st.column_config.NumberColumn("該筆買進成本 ($)", min_value=0, format="%d"),
+            "波段損益": st.column_config.NumberColumn("平倉淨利 ($)", format="%d"),
+            "備註": st.column_config.TextColumn("標的與心得")
+        }, use_container_width=True
+    )
+    
+    if not edited_df.equals(df_log):
+        edited_df.to_csv(LOG_FILE, index=False)
+        st.success("✅ 紀錄已更新！")
+        st.rerun() 
+        
+    if len(edited_df) > 0:
+        edited_df['累計資金'] = 3000 + edited_df['波段損益'].cumsum()
+        fig = px.line(edited_df, x='日期', y='累計資金', markers=True, title="波段資產雪球軌跡")
+        fig.update_layout(template="plotly_dark", yaxis_title="總資金 ($)", xaxis_title="日期")
+        st.plotly_chart(fig, use_container_width=True)
