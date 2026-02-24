@@ -2,12 +2,14 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import plotly.express as px
 from datetime import datetime
 import pytz
 import os
+import re
 
-st.set_page_config(page_title="波段紀律系統 7.0", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="波段紀律系統 Pro Max", page_icon="💎", layout="wide")
 
 st.markdown("""
 <style>
@@ -15,6 +17,7 @@ st.markdown("""
     .report-card { background-color: #1E1E1E; color: white; padding: 20px; border-radius: 12px; border-top: 5px solid #1E90FF; margin-top: 15px; }
     .metric-box { background-color: #2b2b2b; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #444;}
     .news-box { background-color: #1E1E1E; padding: 15px; border-radius: 8px; border-left: 5px solid #FFD700; margin-top: 10px; font-size: 14px;}
+    .tactic-box { background-color: rgba(255, 140, 0, 0.1); border-left: 5px solid #FF8C00; padding: 15px; border-radius: 8px; margin-top: 15px; }
     .highlight-red { color: #FF4B4B; font-weight: bold; }
     .highlight-green { color: #00CC96; font-weight: bold; }
     .highlight-blue { color: #1E90FF; font-weight: bold; }
@@ -26,20 +29,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =====================================================
-# 置頂控制區與一鍵更新
-# =====================================================
 colA, colB = st.columns([3, 1])
 with colA:
-    st.title("🚀 波段紀律交易系統 7.0（全球雙引擎版）")
+    st.title("💎 波段紀律交易系統 (Pro Max)")
 with colB:
     st.write("") 
-    if st.button("🔄 一鍵更新盤況與選股", type="primary", use_container_width=True):
+    if st.button("🔄 全局刷新與資料同步", type="primary", use_container_width=True):
         st.cache_data.clear()
 
 tw_tz = pytz.timezone('Asia/Taipei')
-now = datetime.now(tw_tz)
-st.caption(f"系統時間：{now.strftime('%Y-%m-%d %H:%M')} | 支援台股與美股全自動分析")
+st.caption(f"系統時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')} | 終極完善：雙層專業圖表、移動停利回測、下拉快選")
 
 # =====================================================
 # 雙引擎股池設定
@@ -51,34 +50,36 @@ tw_pool = {
     "3017.TW": "奇鋐", "3034.TW": "聯詠", "3443.TW": "創意", "3661.TW": "世芯-KY", "3450.TW": "聯鈞",
     "0050.TW": "台灣50", "0056.TW": "高股息", "2881.TW": "富邦金", "2891.TW": "中信金"
 }
-
 us_pool = {
-    "NVDA": "輝達 (AI霸主)", "TSLA": "特斯拉", "AAPL": "蘋果", "MSFT": "微軟", "GOOGL": "谷歌",
+    "NVDA": "輝達", "TSLA": "特斯拉", "AAPL": "蘋果", "MSFT": "微軟", "GOOGL": "谷歌",
     "META": "Meta", "AMZN": "亞馬遜", "AMD": "超微", "PLTR": "帕蘭泰爾", "ARM": "安謀",
-    "AVGO": "博通", "SMCI": "美超微", "CRWD": "CrowdStrike", "COIN": "微策略 (比特幣)",
+    "AVGO": "博通", "SMCI": "美超微", "CRWD": "CrowdStrike", "COIN": "微策略",
     "TSM": "台積電 ADR", "QQQ": "納斯達克 ETF", "SPY": "標普500 ETF"
 }
-
 combined_pool = {**tw_pool, **us_pool}
 
 # =====================================================
-# 共用核心函數 
+# 共用核心函數
 # =====================================================
+@st.cache_data(ttl=600)
+def get_realtime_fx():
+    try:
+        fx = yf.download("TWD=X", period="1d", progress=False)
+        if isinstance(fx.columns, pd.MultiIndex): fx.columns = fx.columns.droplevel(1)
+        return float(fx['Close'].iloc[-1])
+    except:
+        return 32.5 
+
 def is_us_stock(ticker):
-    """判斷是否為美股"""
     return not (".TW" in ticker.upper() or ".TWO" in ticker.upper())
 
 def smart_ticker_lookup(user_input):
     user_input = str(user_input).strip().upper()
     if not user_input: return None
     if ".TW" in user_input or ".TWO" in user_input: return user_input
-    
-    # 從股池搜尋
     for sym, name in combined_pool.items():
-        if user_input == name or user_input in sym: return sym
-        
-    # AI 判斷：全是英文字母代表美股，全是數字代表台股
-    if user_input.isalpha(): return user_input
+        if user_input in name.upper() or user_input in sym.upper(): return sym
+    if re.match(r'^[A-Z]+$', user_input): return user_input
     if user_input.isdigit(): return user_input + ".TW"
     return user_input
 
@@ -87,16 +88,12 @@ def market_filter():
     try:
         twii = yf.download("^TWII", period="3mo", progress=False)
         spy = yf.download("SPY", period="3mo", progress=False)
-        
         if isinstance(twii.columns, pd.MultiIndex): twii.columns = twii.columns.droplevel(1)
         if isinstance(spy.columns, pd.MultiIndex): spy.columns = spy.columns.droplevel(1)
-            
         twii['20MA'] = twii['Close'].rolling(20).mean()
         spy['20MA'] = spy['Close'].rolling(20).mean()
-        
         tw_status = "🟢 多頭" if twii.iloc[-1]['Close'] > twii.iloc[-1]['20MA'] else "🔴 空頭"
         us_status = "🟢 多頭" if spy.iloc[-1]['Close'] > spy.iloc[-1]['20MA'] else "🔴 空頭"
-        
         return f"🇹🇼 台股: {tw_status} ｜ 🇺🇸 美股: {us_status}"
     except:
         return "⚪ 大盤數據讀取異常"
@@ -106,42 +103,38 @@ def calculate_indicators(hist):
     hist['5MA'] = hist['Close'].rolling(5).mean()
     hist['10MA'] = hist['Close'].rolling(10).mean()
     hist['20MA'] = hist['Close'].rolling(20).mean()
-
     exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
     exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
     hist['MACD'] = exp1 - exp2
     hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
-
     delta = hist['Close'].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
     loss = loss.replace(0, 1e-10)
     rs = gain / loss
     hist['RSI'] = 100 - (100 / (1 + rs))
-
     hist['prev_close'] = hist['Close'].shift(1)
     tr1 = hist['High'] - hist['Low']
     tr2 = (hist['High'] - hist['prev_close']).abs()
     tr3 = (hist['Low'] - hist['prev_close']).abs()
     hist['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     hist['ATR'] = hist['TR'].rolling(14).mean()
-
-    hist['Turnover'] = hist['Close'] * hist['Volume']
     hist['Recent_High20'] = hist['High'].rolling(20).max().shift(1)
     return hist
 
 st.info(f"📊 全球大盤月線格局 ➔ {market_filter()}")
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 AI 自動選股雷達", "🏥 個股深度診斷", "📊 實戰交易紀錄", "🧪 策略回測中心"])
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 AI 雷達掃描", "🏥 個股深度診斷", "📊 實戰資產日誌", "🧪 專業回測引擎"])
 
 # =====================================================
-# TAB 1: AI 自動選股雷達 (跨國雙引擎)
+# TAB 1: AI 雷達掃描
 # =====================================================
 with tab1:
     col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
     market_choice = col_s1.radio("選擇雷達掃描市場", ["🇹🇼 台股強勢池", "🇺🇸 美股巨頭池", "🌍 全球火力全開"], horizontal=True)
-    capital_input = col_s2.number_input("設定台幣總資金 (NT$)", value=500000, step=50000)
-    fx_rate = col_s3.number_input("美金匯率 (USD/TWD)", value=32.5, step=0.1)
+    capital_input = col_s2.number_input("設定台幣總資金 (NT$)", value=50000, step=10000)
+    current_fx = get_realtime_fx()
+    fx_rate = col_s3.number_input("即時美金匯率", value=float(current_fx), step=0.01)
     
     @st.cache_data(ttl=600)
     def auto_screener(pool_choice, capital_ntd, fx):
@@ -167,7 +160,6 @@ with tab1:
                 if today['5MA'] > today['10MA'] > today['20MA']: score += 30
                 if today['MACD'] > today['Signal']: score += 20
                 if today['Close'] > today['Recent_High20']: score += 20
-                
                 avg_vol_5d = hist['Volume'].rolling(5).mean().shift(1).iloc[-1]
                 if avg_vol_5d > 0 and today['Volume'] > avg_vol_5d * 1.2: score += 10
                 
@@ -182,12 +174,13 @@ with tab1:
                     buy_price = entry - (atr * 0.15) 
                     tp = entry + (atr * 3) 
                     
-                    # 資金與股數精算 (統一轉回原幣別計算股數)
                     risk_per_trade_ntd = capital_ntd * 0.02
                     risk_per_share_local = (buy_price - stop) * exchange_rate
                     if risk_per_share_local <= 0: continue
                     shares = int(risk_per_trade_ntd // risk_per_share_local)
                     if shares < 1: continue
+
+                    if _is_us and (shares * buy_price) < 100: continue
 
                     win_days = (hist['High'] - hist['Open']) / hist['Open'] >= 0.01 
                     win_rate = (win_days.sum() / len(win_days)) * 100
@@ -195,9 +188,9 @@ with tab1:
                     trade_value_local = shares * buy_price * exchange_rate
                     est_gross_profit_local = shares * (tp - buy_price) * exchange_rate
                     
-                    # 摩擦成本 (美股預設零手續費免稅，台股照舊)
                     if _is_us:
-                        friction_local = 0 
+                        fee_usd = (shares * buy_price) * 0.001
+                        friction_local = (fee_usd * 2) * exchange_rate 
                     else:
                         fee = max(1, int(trade_value_local * 0.001425 * 0.28))
                         tax = int(trade_value_local * 0.003)
@@ -205,17 +198,15 @@ with tab1:
                         
                     net_profit_local = est_gross_profit_local - friction_local
                     if net_profit_local <= 0: continue
-                    
                     ev_local = (win_rate/100 * est_gross_profit_local) - ((1 - win_rate/100) * (shares * (buy_price - stop) * exchange_rate))
                     
                     prev_close = hist['Close'].shift(1).iloc[-1]
                     status_badge = "<span class='badge-red'>今日強勢 ⬆</span>" if today['Close'] > prev_close else "<span class='badge-green'>今日拉回 ⬇</span>"
-                    clean_sym = sym.replace('.TW', '').replace('.TWO', '')
                     market_badge = "<span class='badge-us'>🇺🇸 美股</span>" if _is_us else "<span class='badge-gold'>🇹🇼 台股</span>"
                     
                     results.append({
-                        "代號": sym, "clean_sym": clean_sym, "名稱": name, "現價": entry, 
-                        "buy_price": buy_price, "停損": stop, "tp": tp, "建議股數": shares, 
+                        "代號": sym, "clean_sym": sym.replace('.TW', '').replace('.TWO', ''), "名稱": name, 
+                        "現價": entry, "buy_price": buy_price, "停損": stop, "tp": tp, "建議股數": shares, 
                         "評分": score, "win_rate": win_rate, "net_profit": net_profit_local, 
                         "friction": friction_local, "ev": ev_local, "status": status_badge,
                         "currency": currency_sym, "market": market_badge
@@ -223,50 +214,59 @@ with tab1:
             except: pass
         return sorted(results, key=lambda x: x['評分'], reverse=True)
 
-    if st.button("🚀 啟動跨國 AI 智能快篩", type="primary"):
-        with st.spinner("連接全球市場數據，精算跨國期望值..."):
+    if st.button("🚀 啟動 AI 掃描引擎", type="primary", use_container_width=True):
+        with st.spinner("掃描全球數據，精算風控與目標價..."):
             targets = auto_screener(market_choice, capital_input, fx_rate)
             if targets:
-                st.success(f"🎯 篩選完成！為您挑選出 {len(targets)} 檔最佳戰鬥目標：")
+                st.success(f"🎯 嚴選 {len(targets)} 檔合規標的：")
                 for i, t in enumerate(targets):
                     ev_color = '#FF4B4B' if t['ev'] > 0 else '#00CC96'
-                    
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="card">
-                            <div style="margin-bottom: 10px;">
-                                {t['market']} <span class="big-font">{t['clean_sym']} {t['名稱']}</span> &nbsp; {t['status']}
-                            </div>
-                            <div>
-                                <b>最新股價：</b> {t['currency']}{t['現價']:.2f} &nbsp;|&nbsp; 
-                                <b>歷史短線勝率：</b> {t['win_rate']:.0f}%
-                            </div>
-                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
-                                🛒 <b>操作紀律：</b> 買入 <span class="highlight-blue">{t['currency']}{t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">{t['currency']}{t['tp']:.2f}</span> | 月線停損 <span class="highlight-green">{t['currency']}{t['停損']:.2f}</span><br>
-                                💰 <b>2%風控配置：</b> 可打 <b>{t['建議股數']} 股</b> (預估淨利 NT$ {t['net_profit']:,.0f} | 總稅費 NT$ {t['friction']:,.0f})<br>
-                                📊 <b>AI 戰鬥力：</b> <span style="color: #1E90FF; font-weight: bold;">{t['評分']:.1f} 分</span> (EV: <span style="color: {ev_color}; font-weight: bold;">NT$ {t['ev']:,.0f}</span>)
-                            </div>
+                    st.markdown(f"""
+                    <div class="card">
+                        <div style="margin-bottom: 10px;">
+                            {t['market']} <span class="big-font">{t['clean_sym']} {t['名稱']}</span> &nbsp; {t['status']}
                         </div>
-                        """, unsafe_allow_html=True)
-                        st.code(t['clean_sym'], language="text")
+                        <div>
+                            <b>最新股價：</b> {t['currency']}{t['現價']:.2f} &nbsp;|&nbsp; 
+                            <b>歷史勝率：</b> {t['win_rate']:.0f}%
+                        </div>
+                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
+                            🛒 <b>紀律：</b> 買入 <span class="highlight-blue">{t['currency']}{t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">{t['currency']}{t['tp']:.2f}</span> | 停損 <span class="highlight-green">{t['currency']}{t['停損']:.2f}</span><br>
+                            💰 <b>配置：</b> 可打 <b>{t['建議股數']} 股</b> (估淨利 NT$ {t['net_profit']:,.0f})<br>
+                            📊 <b>戰力：</b> <span style="color: #1E90FF; font-weight: bold;">{t['評分']:.1f} 分</span> (EV: <span style="color: {ev_color}; font-weight: bold;">NT$ {t['ev']:,.0f}</span>)
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.code(t['clean_sym'], language="text")
             else:
-                st.warning("📉 目標市場目前無符合高勝率之標的，建議空手觀望。")
+                st.warning("📉 目前無符合高勝率且合規之標的，建議空手。")
 
 # =====================================================
-# TAB 2: 個股診斷與消息面 (支援美股)
+# TAB 2: 個股深度診斷與建倉 (新增下拉快選與雙層圖表)
 # =====================================================
 with tab2:
     st.markdown("### 🤖 跨國個股深度診斷")
-    col1, col2 = st.columns([3, 1])
-    user_input = col1.text_input("輸入代號 (美股直接打如 NVDA，台股打 2330)", value="NVDA")
-    btn = col2.button("執行診斷與查新聞", type="primary", use_container_width=True)
+    
+    # --- 優化點 2：下拉快選與手動輸入完美結合 ---
+    col1, col2, col3 = st.columns([2, 2, 1])
+    quick_select_list = ["--- 自行輸入 ---"] + [f"{k.replace('.TW','')} {v}" for k, v in combined_pool.items()]
+    quick_choice = col1.selectbox("📋 從優質股池快速選擇", quick_select_list)
+    
+    if quick_choice != "--- 自行輸入 ---":
+        default_input = quick_choice.split(" ")[0]
+    else:
+        default_input = "NVDA"
+        
+    user_input = col2.text_input("✍️ 或自行輸入代號/中文", value=default_input)
+    btn = col3.button("🧠 執行深度診斷", type="primary", use_container_width=True)
 
     if btn:
+        st.cache_data.clear()
         parsed = smart_ticker_lookup(user_input)
         _is_us = is_us_stock(parsed)
         cur_sym = "US$" if _is_us else "NT$"
         
-        with st.spinner(f"正在連線分析 {parsed} ..."):
+        with st.spinner(f"正在全方位解析 {parsed} ..."):
             hist = yf.download(parsed, period="6mo", progress=False)
             if not hist.empty:
                 if isinstance(hist.columns, pd.MultiIndex): hist.columns = hist.columns.droplevel(1)
@@ -294,7 +294,6 @@ with tab2:
                 stop = today['20MA'] * 0.99
                 target = entry + today['ATR'] * 2.5
                 
-                # 美股台股資金轉換計算股數
                 exchange_rate = fx_rate if _is_us else 1.0
                 risk_per_trade_ntd = capital_input * 0.02
                 risk_per_share_local = (entry - stop) * exchange_rate
@@ -309,22 +308,43 @@ with tab2:
                 if today['RSI'] > 80: flags.append("短線 RSI 過熱")
                 if today['Close'] < today['20MA']: flags.append("股價跌破生命月線")
                 if not week_trend_ok: flags.append("長線 (週 20MA) 趨勢向下")
+                if _is_us and (shares * entry) < 100:
+                    flags.append(f"單筆總額不足 100 美元，不符國泰低消門檻。")
+
+                dist_to_5ma = (today['Close'] - today['5MA']) / today['5MA']
+                dist_to_20ma = (today['Close'] - today['20MA']) / today['20MA']
+                
+                if score < 40 or today['Close'] < today['20MA']:
+                    tactic = "⛔ **空手觀望**：目前趨勢偏空或動能不足，強烈建議保留資金，不要建倉。"
+                elif today['RSI'] > 75 or dist_to_5ma > 0.05:
+                    tactic = f"⚠️ **高檔分批建倉 (乖離過大)**：股價偏離 5MA 太遠。建議先用 **30% 資金（約 {max(1, int(shares*0.3))} 股）** 試單，剩餘掛在 10MA（{cur_sym}{today['10MA']:.1f}）等拉回低接。"
+                elif today['MACD'] > today['Signal'] and today['RSI'] <= 65 and dist_to_20ma < 0.08:
+                    tactic = f"🔥 **一次建倉 (黃金起漲點)**：動能強且距防守線近，風控極佳。建議於 **{cur_sym}{entry:.1f}** 附近，一次買齊目標 **{shares} 股**。"
+                elif today['Close'] <= today['10MA'] and today['Close'] > today['20MA']:
+                    tactic = f"🛡️ **左側分批接刀**：回測月線中。建議現價買 **50%（約 {max(1, int(shares*0.5))} 股）**，跌至 20MA（{cur_sym}{today['20MA']:.1f}）再加碼。跌破 20MA 全停損。"
+                else:
+                    tactic = f"⚖️ **震盪試單**：走勢震盪，建議先打 **50% 資金（約 {max(1, int(shares*0.5))} 股）** 試水溫，突破前高再加碼。"
 
                 stock_name = combined_pool.get(parsed, parsed.replace('.TW','').replace('.TWO',''))
                 market_tag = "🇺🇸" if _is_us else "🇹🇼"
                 
                 st.markdown(f"""
                 <div class="report-card">
-                    <h3 style="margin-top:0;">{market_tag} {stock_name} 戰術診斷報告</h3>
+                    <h3 style="margin-top:0;">{market_tag} {stock_name} 戰略診斷報告</h3>
                     <div style="background-color: {color}22; border-left: 5px solid {color}; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                        <span style="font-size: 18px; color: {color}; font-weight: bold;">{advice} (AI 評分: {score:.1f})</span>
+                        <span style="font-size: 18px; color: {color}; font-weight: bold;">{advice} (AI 評分: {score:.1f}/100)</span>
                     </div>
                     
                     <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <div class="metric-box" style="flex: 1;"><b>建議進場價</b><br><span style="color:#1E90FF; font-size:18px;">{cur_sym}{entry:.1f}</span></div>
+                        <div class="metric-box" style="flex: 1;"><b>現價/進場區</b><br><span style="color:#1E90FF; font-size:18px;">{cur_sym}{entry:.1f}</span></div>
                         <div class="metric-box" style="flex: 1;"><b>防守停損價</b><br><span style="color:#00CC96; font-size:18px;">{cur_sym}{stop:.1f}</span></div>
                         <div class="metric-box" style="flex: 1;"><b>波段目標價</b><br><span style="color:#FF4B4B; font-size:18px;">{cur_sym}{target:.1f}</span></div>
                         <div class="metric-box" style="flex: 1;"><b>2%風控可買</b><br><span style="color:#FFD700; font-size: 18px; font-weight: bold;">{shares} 股</span></div>
+                    </div>
+                    
+                    <div class="tactic-box">
+                        <h4 style="margin-top:0; color:#FF8C00;">🛒 AI 資金建倉兵法</h4>
+                        <span style="font-size:16px;">{tactic}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -332,11 +352,29 @@ with tab2:
                 if flags:
                     for f in flags: st.error(f"⚠ {f}")
                 else:
-                    st.success("✅ 目前技術面符合做多紀律！")
+                    st.success("✅ 目前技術面與風控皆完美符合做多紀律！")
+
+                # --- 優化點 1：專業雙層圖表 (K線 + MACD) ---
+                st.markdown("#### 📊 專業技術圖表檢視")
+                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+                
+                # 主圖：K線與均線
+                fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='日K'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['10MA'], name='10MA', line=dict(color='#FFD700', width=1)), row=1, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['20MA'], name='20MA (月線)', line=dict(color='#9B59B6', width=2)), row=1, col=1)
+                
+                # 副圖：MACD
+                macd_colors = ['#FF4B4B' if val > 0 else '#00CC96' for val in (hist['MACD'] - hist['Signal'])]
+                fig.add_trace(go.Bar(x=hist.index, y=(hist['MACD'] - hist['Signal']), marker_color=macd_colors, name='MACD柱'), row=2, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['MACD'], line=dict(color='#1E90FF', width=1), name='MACD'), row=2, col=1)
+                fig.add_trace(go.Scatter(x=hist.index, y=hist['Signal'], line=dict(color='#FFD700', width=1), name='Signal'), row=2, col=1)
+
+                fig.update_layout(height=600, margin=dict(l=0,r=0,t=10,b=0), xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, template="plotly_dark", hovermode="x unified")
+                st.plotly_chart(fig, use_container_width=True)
 
                 st.markdown("#### 📰 最新消息面追蹤")
                 if news_data:
-                    for n in news_data[:5]: 
+                    for n in news_data[:3]: 
                         try:
                             pub_time = datetime.fromtimestamp(n['providerPublishTime']).strftime('%Y-%m-%d %H:%M')
                             st.markdown(f"""
@@ -348,57 +386,69 @@ with tab2:
                         except: pass
                 else:
                     st.info("目前系統未爬取到近期重大新聞。")
-
-                st.markdown("---")
-                fig = go.Figure()
-                fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='日K'))
-                fig.add_trace(go.Scatter(x=hist.index, y=hist['20MA'], name='20MA (月線)', line=dict(color='#9B59B6', width=2)))
-                fig.update_layout(height=450, margin=dict(l=0,r=0,t=0,b=0), xaxis_rangeslider_visible=False, template="plotly_dark")
-                st.plotly_chart(fig, use_container_width=True)
             else:
-                st.error("無法取得資料，請檢查股票代號。")
+                st.error("❌ 無法取得資料！請確認代號是否正確。")
 
 # =====================================================
-# TAB 3 & 4: 交易紀錄與回測 (全域相容)
+# TAB 3: 交易紀錄 (新增部位狀態管理)
 # =====================================================
 with tab3:
-    st.markdown("### 🏆 實戰資產翻倍軌跡表 (統一以 NT$ 記帳)")
+    st.markdown("### 🏆 實戰資產翻倍軌跡與部位管理")
     LOG_FILE = "trade_log.csv"
     if os.path.exists(LOG_FILE): df = pd.read_csv(LOG_FILE)
-    else: df = pd.DataFrame({"日期":[datetime.now().strftime('%Y-%m-%d')], "標的":["3000元初始本金"], "單筆損益(NTD)":[0]})
+    else: df = pd.DataFrame({"日期":[datetime.now().strftime('%Y-%m-%d')], "標的":["5萬元初始本金"], "狀態":["已平倉"], "單筆損益(NTD)":[0]})
 
     total_pnl = df["單筆損益(NTD)"].sum()
-    current_capital = 3000 + total_pnl
+    current_capital = 50000 + total_pnl
     target = 500000
     
     c1, c2, c3 = st.columns(3)
     c1.metric("目前總資金", f"NT$ {current_capital:,.0f}")
-    c2.metric("累計波段損益", f"NT$ {total_pnl:,.0f}", f"{(total_pnl/3000)*100:.1f}% 成長率")
+    c2.metric("累計波段損益", f"NT$ {total_pnl:,.0f}", f"{(total_pnl/50000)*100:.1f}% 成長率")
     c3.metric("達成率", f"{(current_capital/target)*100:.2f} %")
     st.progress(min(current_capital / target, 1.0))
 
-    edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    # --- 優化點 4：加入持倉狀態下拉選單 ---
+    st.markdown("#### 📝 交易日誌管理")
+    edited = st.data_editor(
+        df, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "狀態": st.column_config.SelectboxColumn("部位狀態", options=["持有中", "已平倉", "已停損"])
+        }
+    )
     if not edited.equals(df):
         edited.to_csv(LOG_FILE, index=False)
         st.success("✅ 交易紀錄已儲存！請重新整理以更新圖表。")
     
     if len(edited) > 0:
-        edited['累計資金'] = 3000 + edited['單筆損益(NTD)'].cumsum()
-        fig_log = px.line(edited, x='日期', y='累計資金', markers=True, title="真實資產成長軌跡 (Equity Curve)")
-        fig_log.update_layout(template="plotly_dark", yaxis_title="總資金 (NT$)", xaxis_title="日期")
-        st.plotly_chart(fig_log, use_container_width=True)
+        # 只畫已實現損益的曲線
+        closed_trades = edited[edited['狀態'].isin(["已平倉", "已停損", "已平倉(初始)"])]
+        if not closed_trades.empty:
+            closed_trades = closed_trades.copy()
+            closed_trades['累計資金'] = 50000 + closed_trades['單筆損益(NTD)'].cumsum()
+            fig_log = px.line(closed_trades, x='日期', y='累計資金', markers=True, title="真實資產成長軌跡 (Equity Curve)")
+            fig_log.update_layout(template="plotly_dark", yaxis_title="總資金 (NT$)", xaxis_title="日期")
+            st.plotly_chart(fig_log, use_container_width=True)
 
+# =====================================================
+# TAB 4: 專業回測引擎 (新增移動停利)
+# =====================================================
 with tab4:
-    st.markdown("### 🧪 全球策略高速回測引擎")
-    col_t1, col_t2 = st.columns([3, 1])
-    ticker_bt = col_t1.text_input("輸入欲回測代號 (支援台/美股)", value="NVDA", key="bt_ticker")
-    if col_t2.button("🚀 執行回測", use_container_width=True):
+    st.markdown("### 🧪 專業回測引擎 (含移動停利機制)")
+    col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
+    ticker_bt = col_t1.text_input("輸入欲回測代號", value="NVDA", key="bt_ticker")
+    period_choice = col_t2.selectbox("選擇回測時間", ["3mo (近三個月壓測)", "6mo (半年行情)", "1y (一年行情)", "2y (完整牛熊)"], index=0)
+    
+    if col_t3.button("🚀 執行精準回測", use_container_width=True):
         parsed = smart_ticker_lookup(ticker_bt)
         _is_us = is_us_stock(parsed)
         cur_sym = "US$" if _is_us else "NT$"
+        real_period = period_choice.split(" ")[0] 
         
-        with st.spinner("極速模擬近兩年交易中..."):
-            hist = yf.download(parsed, period="2y", progress=False)
+        with st.spinner(f"正在模擬過去 {period_choice} 交易區間..."):
+            hist = yf.download(parsed, period=real_period, progress=False)
             if not hist.empty:
                 if isinstance(hist.columns, pd.MultiIndex): hist.columns = hist.columns.droplevel(1)
                 hist = calculate_indicators(hist)
@@ -408,21 +458,36 @@ with tab4:
                 bt_equity = []
                 position = 0
                 entry_price = 0
+                highest_price_since_entry = 0 # 紀錄進場後最高價
                 cumulative_points = 0 
+                start_idx = min(30, len(hist) - 10) 
 
-                for i in range(50, len(hist)):
+                for i in range(start_idx, len(hist)):
                     today = hist.iloc[i]
                     date_str = hist.index[i].strftime('%Y-%m-%d')
-                    recent_high = today['Recent_High20'] 
+                    if pd.isna(today['20MA']): continue 
 
                     if position == 0:
-                        if (today['Close'] > recent_high and today['5MA'] > today['10MA'] > today['20MA'] and 50 < today['RSI'] < 75):
+                        if (today['Close'] > today['Recent_High20'] and today['5MA'] > today['10MA'] > today['20MA'] and 50 < today['RSI'] < 75):
                             position = 1
                             entry_price = today['Close']
+                            highest_price_since_entry = today['Close']
                     else:
-                        stop = today['20MA'] * 0.99
-                        if today['Close'] < stop:
-                            profit = today['Close'] - entry_price
+                        # 更新進場後最高價
+                        if today['High'] > highest_price_since_entry:
+                            highest_price_since_entry = today['High']
+                        
+                        # --- 優化點 3：加入動態移動停利 (Trailing Stop) ---
+                        # 條件A：跌破20MA停損。 條件B：從最高點回落 10% 停利保護。
+                        stop_loss = today['20MA'] * 0.99
+                        trailing_stop = highest_price_since_entry * 0.90
+                        
+                        exit_price = 0
+                        if today['Close'] < stop_loss: exit_price = today['Close']
+                        elif today['Close'] < trailing_stop: exit_price = trailing_stop
+                        
+                        if exit_price > 0:
+                            profit = exit_price - entry_price
                             results.append(profit)
                             cumulative_points += profit
                             bt_dates.append(date_str)
@@ -445,6 +510,6 @@ with tab4:
                     fig_bt.update_layout(template="plotly_dark", yaxis_title=f"累計獲利 ({cur_sym})")
                     st.plotly_chart(fig_bt, use_container_width=True)
                 else:
-                    st.warning("此區間內未產生符合條件的交易訊號。")
+                    st.warning(f"在過去 {period_choice} 區間內，未產生符合進場訊號。")
             else:
                 st.error("無法取得回測數據。")
