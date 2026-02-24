@@ -25,7 +25,7 @@ def relax_params():
     st.session_state.win_rate = 50
     st.session_state.rvol = 0.8
 
-st.set_page_config(page_title="零股翻倍挑戰", page_icon="🚀", layout="centered")
+st.set_page_config(page_title="實戰當沖指揮中心", page_icon="⚡", layout="centered")
 
 st.markdown("""
 <style>
@@ -45,7 +45,7 @@ st.markdown("""
 
 colA, colB, colC = st.columns([1.5, 1, 1])
 with colA:
-    st.title("🚀 零股翻倍挑戰")
+    st.title("⚡ 實戰當沖中心")
 with colB:
     st.write("") 
     st.button("🔄 全局刷新", use_container_width=True, on_click=reset_and_refresh)
@@ -58,14 +58,16 @@ now = datetime.now(tw_tz)
 is_open = now.replace(hour=9, minute=0, second=0) <= now <= now.replace(hour=13, minute=30, second=0) and now.weekday() < 5
 status_msg = "🟢 盤中交易中" if is_open else "🔴 市場已收盤"
 st.caption(f"{status_msg} | 系統時間：{now.strftime('%Y-%m-%d %H:%M:%S')}")
+if is_open and now.hour == 9 and now.minute < 15:
+    st.warning("⚠️ **開盤前 15 分鐘警告**：免費報價可能有延遲，請務必搭配券商軟體確認即時現價與量能！")
 
-st.markdown("### 🏆 挑戰進度")
+st.markdown("### 🏆 資金水位與進度")
 col_curr, col_target = st.columns(2)
-current_capital = col_curr.number_input("目前帳戶總資金 (元)", value=3000, step=1000)
-target_capital = col_target.number_input("終極目標 (元)", value=500000, step=50000)
+# 實戰預設資金調整為 50 萬
+current_capital = col_curr.number_input("今日作戰總資金 (元)", value=500000, step=50000)
+target_capital = col_target.number_input("波段終極目標 (元)", value=1000000, step=50000)
 
 progress = min(current_capital / target_capital, 1.0)
-st.markdown(f"<div class='progress-text'>目前進度：{progress*100:.2f}% (距離目標還差 {target_capital - current_capital:,} 元)</div>", unsafe_allow_html=True)
 st.progress(progress)
 st.markdown("---")
 
@@ -98,7 +100,7 @@ def smart_ticker_lookup(user_input):
 tab1, tab2 = st.tabs(["🎯 AI 戰情雷達", "📈 全景戰術圖表"])
 
 # ==========================================
-# 分頁 1：戰情雷達 (新增建議買點)
+# 分頁 1：戰情雷達 (張數/股數 雙軌顯示)
 # ==========================================
 with tab1:
     @st.cache_data(ttl=300)
@@ -119,6 +121,8 @@ with tab1:
                 
                 affordable_shares = int(capital // curr_price)
                 if affordable_shares < 1: continue 
+                # 實戰張數計算 (1張=1000股)
+                affordable_lots = affordable_shares // 1000
                 
                 avg_vol_10d = hist['Volume'].rolling(10).mean().iloc[-2]
                 rvol = today['Volume'] / avg_vol_10d if avg_vol_10d > 0 else 1
@@ -127,10 +131,7 @@ with tab1:
                 hist['TR'] = hist['High'] - hist['Low']
                 atr = hist['TR'].rolling(14).mean().iloc[-1]
                 
-                # --- 新增：智慧拉回買點演算法 ---
-                # 建議買入價設定為：現價微幅拉回 15% 的 ATR 波動範圍，避免追在最高點
                 buy_price = curr_price - (atr * 0.15)
-                
                 sl = buy_price - (atr * 0.5) 
                 tp = buy_price + (atr * 1.0) 
                 
@@ -151,8 +152,9 @@ with tab1:
                 
                 results.append({
                     "symbol": sym, "clean_sym": clean_sym, "desc": desc, "price": curr_price,
-                    "buy_price": buy_price, # 儲存買點
-                    "win_rate": win_rate, "rvol": rvol, "atr": atr, "shares": affordable_shares, 
+                    "buy_price": buy_price,
+                    "win_rate": win_rate, "rvol": rvol, "atr": atr, 
+                    "shares": affordable_shares, "lots": affordable_lots,
                     "net_profit": net_profit, "sl": sl, "tp": tp, "status": status_badge, "ev": ev,
                     "friction": friction, "ai_score": ai_score
                 })
@@ -160,49 +162,54 @@ with tab1:
             
         return sorted(results, key=lambda x: x['ai_score'], reverse=True)
 
-    loading_msg = "🤖 AI 深度快篩中，尋找市場最佳解..." if st.session_state.ai_mode else "⚡ 啟動量化引擎掃描中..."
+    loading_msg = "🤖 AI 深度快篩中，尋找開盤動能..." if st.session_state.ai_mode else "⚡ 啟動量化引擎掃描中..."
     with st.spinner(loading_msg):
         targets = scan_pro_candidates(strategic_pool, current_capital, st.session_state.win_rate, fee_discount, st.session_state.rvol)
         
     if targets:
         if st.session_state.ai_mode:
-            st.success(f"🤖 AI 快篩完成！為您嚴選出 **{len(targets)}** 檔最佳戰鬥目標：")
+            st.success(f"🤖 AI 快篩完成！嚴選 **{len(targets)}** 檔最佳實戰目標：")
         else:
-            st.success(f"🎯 鎖定 **{len(targets)}** 檔適合您目前資金的標的：")
+            st.success(f"🎯 鎖定 **{len(targets)}** 檔符合條件標的：")
             
         for i, t in enumerate(targets):
             ev_color = '#FF4B4B' if t['ev'] > 0 else '#00CC96'
             crown_badge = "<span class='badge-gold'>👑 AI 首選</span> &nbsp;" if st.session_state.ai_mode and i < 2 else ""
             
+            # 張數顯示邏輯：大於1張用藍字顯示張數，小於1張只顯示股數
+            if t['lots'] >= 1:
+                lot_display = f"<span class='highlight-blue'>{t['lots']} 張</span> (或 {t['shares']} 股)"
+            else:
+                lot_display = f"不足 1 張，限打 <span class='highlight-blue'>{t['shares']} 股</span>"
+
             with st.container():
-                # 這裡加入了亮藍色的「建議買入」價格
                 st.markdown(f"""
                 <div class="card">
                     <div style="margin-bottom: 10px;">
                         {crown_badge}<span class="big-font">{t['clean_sym']} {t['desc']}</span> &nbsp; {t['status']}
                     </div>
                     <div>
-                        <b>最新股價：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
-                        <b>爆量倍數：</b> {t['rvol']:.1f}x &nbsp;|&nbsp; 
-                        <b>歷史勝率：</b> {t['win_rate']:.0f}%
+                        <b>即時現價：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
+                        <b>爆量：</b> {t['rvol']:.1f}x &nbsp;|&nbsp; 
+                        <b>勝率：</b> {t['win_rate']:.0f}%
                     </div>
                     <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
-                        🛒 <b>操作紀律：</b> 建議買入 <span class="highlight-blue">${t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">${t['tp']:.2f}</span> | 停損 <span class="highlight-green">${t['sl']:.2f}</span><br>
-                        💰 <b>零股配置：</b> 可打 <b>{t['shares']} 股</b> (預估淨利 ${t['net_profit']:,.0f} | 總稅費約 ${t['friction']:,.0f})<br>
-                        📊 <b>AI 綜合戰鬥力：</b> <span style="color: #1E90FF; font-weight: bold;">{t['ai_score']:.1f} 分</span> (EV: <span style="color: {ev_color};">${t['ev']:,.0f}</span>)
+                        🛒 <b>掛單策略：</b> 建議買點 <span class="highlight-blue">${t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">${t['tp']:.2f}</span> | 停損 <span class="highlight-green">${t['sl']:.2f}</span><br>
+                        💰 <b>購買張數：</b> 可打 {lot_display} <br>
+                        📊 <b>估計淨利：</b> ${t['net_profit']:,.0f} (EV: <span style="color: {ev_color};">${t['ev']:,.0f}</span>)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                st.caption("👇 點擊右側圖示複製代號，到富貴角掛出『建議買入價』")
+                st.caption("👇 點右側複製代號 ➔ 切換富貴角 ➔ 掛出『建議買點』價格")
                 st.code(t['clean_sym'], language="text")
                 st.markdown("<br>", unsafe_allow_html=True)
     else:
-        st.warning("📉 目前無符合條件之標的。代表現在大盤非常凶險，建議空手！")
-        st.button("⚡ 手動放寬策略", on_click=relax_params, type="primary")
+        st.warning("📉 目前無符合條件標的，盤勢不明，切勿躁進。")
+        st.button("⚡ 放寬策略", on_click=relax_params, type="primary")
 
 # ==========================================
-# 分頁 2：全景戰術圖表 & 即時指標 (維持原樣)
+# 分頁 2：全景戰術圖表 & 即時指標
 # ==========================================
 with tab2:
     user_search = st.text_input("🔍 快速分析 (輸入代號或名稱，如：2330 或 台積電)", placeholder="支援中文搜尋...")
