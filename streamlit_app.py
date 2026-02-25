@@ -9,405 +9,273 @@ import pytz
 import os
 import re
 
-st.set_page_config(page_title="波段紀律系統 Pro Max", page_icon="💎", layout="wide")
+st.set_page_config(page_title="當沖指揮中心 Pro", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
     .big-font { font-size:22px !important; font-weight: bold; color: #1E90FF; }
-    .report-card { background-color: #1E1E1E; color: white; padding: 20px; border-radius: 12px; border-top: 5px solid #1E90FF; margin-top: 15px; }
-    .metric-box { background-color: #2b2b2b; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #444; min-width: 120px; flex: 1; margin-bottom: 10px;}
-    .news-box { background-color: #1E1E1E; padding: 15px; border-radius: 8px; border-left: 5px solid #FFD700; margin-top: 10px; font-size: 14px;}
-    .tactic-box { background-color: rgba(255, 140, 0, 0.1); border-left: 5px solid #FF8C00; padding: 15px; border-radius: 8px; margin-top: 10px; }
+    .report-card { background-color: #1E1E1E; color: white; padding: 20px; border-radius: 12px; border-top: 5px solid #FF4B4B; margin-top: 15px; }
+    .metric-box { background-color: #2b2b2b; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #444;}
     .highlight-red { color: #FF4B4B; font-weight: bold; }
     .highlight-green { color: #00CC96; font-weight: bold; }
-    .highlight-blue { color: #1E90FF; font-weight: bold; }
-    .card { background-color: #f8f9fa; color: #333; padding: 18px; border-radius: 12px; border-left: 6px solid #FF8C00; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
+    .highlight-vwap { color: #9B59B6; font-weight: bold; }
+    .card { background-color: #f8f9fa; color: #333; padding: 18px; border-radius: 12px; border-left: 6px solid #1E90FF; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);}
     .badge-red { background-color: #FF4B4B; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
     .badge-green { background-color: #00CC96; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .badge-gold { background-color: #FFD700; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-    .badge-us { background-color: #1E90FF; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
+    .badge-gray { background-color: #555555; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
 
+# =====================================================
+# 置頂控制區
+# =====================================================
 colA, colB = st.columns([3, 1])
 with colA:
-    st.title("💎 波段紀律交易系統 (Pro Max)")
+    st.title("⚡ 終極當沖指揮中心 (Pro Max)")
 with colB:
     st.write("") 
-    if st.button("🔄 全局刷新與資料同步", type="primary", use_container_width=True):
+    if st.button("🔄 盤中一鍵極速刷新", type="primary", use_container_width=True):
         st.cache_data.clear()
 
 tw_tz = pytz.timezone('Asia/Taipei')
-st.caption(f"系統時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M')} | 修復：手機版 HTML 渲染器衝突與圖表繪製")
+now = datetime.now(tw_tz)
+is_open = now.replace(hour=9, minute=0, second=0) <= now <= now.replace(hour=13, minute=30, second=0) and now.weekday() < 5
+status_msg = "🟢 盤中激戰中" if is_open else "🔴 市場休息"
+st.caption(f"{status_msg} | 系統時間：{now.strftime('%Y-%m-%d %H:%M:%S')} | 核心策略：VWAP 均價線 + 爆量動能")
+
+if is_open and now.hour == 9 and now.minute < 15:
+    st.warning("⚠️ **開盤大亂鬥警告**：09:00~09:15 API 可能有延遲，請務必搭配券商軟體確認即時現價與量能！")
 
 # =====================================================
-# 雙引擎股池設定
+# 當沖熱門高週轉率股池
 # =====================================================
-tw_pool = {
-    "2330.TW": "台積電", "2317.TW": "鴻海", "2454.TW": "聯發科", "2382.TW": "廣達", "3231.TW": "緯創",
-    "2376.TW": "技嘉", "1519.TW": "華城", "1513.TW": "中興電", "1504.TW": "東元", "1514.TW": "亞力",
-    "2603.TW": "長榮", "2609.TW": "陽明", "2618.TW": "長榮航", "2365.TW": "昆盈", "3324.TW": "雙鴻",
-    "3017.TW": "奇鋐", "3034.TW": "聯詠", "3443.TW": "創意", "3661.TW": "世芯-KY", "3450.TW": "聯鈞",
-    "0050.TW": "台灣50", "0056.TW": "高股息", "2881.TW": "富邦金", "2891.TW": "中信金"
+daytrade_pool = {
+    "2330.TW": "台積電", "2317.TW": "鴻海", "3231.TW": "緯創", "2382.TW": "廣達", "2356.TW": "英業達",
+    "1519.TW": "華城", "1513.TW": "中興電", "1514.TW": "亞力", "1504.TW": "東元", "2371.TW": "大同",
+    "2603.TW": "長榮", "2609.TW": "陽明", "2615.TW": "萬海", "2618.TW": "長榮航", "2610.TW": "華航",
+    "3324.TW": "雙鴻", "3017.TW": "奇鋐", "2421.TW": "建準", "3034.TW": "聯詠", "2379.TW": "瑞昱",
+    "3661.TW": "世芯-KY", "3443.TW": "創意", "3450.TW": "聯鈞", "4979.TW": "華星光", "3081.TWO": "聯亞",
+    "2365.TW": "昆盈", "2359.TW": "所羅門", "4562.TWO": "穎漢", "8033.TWO": "雷虎", "2409.TW": "友達"
 }
-us_pool = {
-    "NVDA": "輝達", "TSLA": "特斯拉", "AAPL": "蘋果", "MSFT": "微軟", "GOOGL": "谷歌",
-    "META": "Meta", "AMZN": "亞馬遜", "AMD": "超微", "PLTR": "帕蘭泰爾", "ARM": "安謀",
-    "AVGO": "博通", "SMCI": "美超微", "CRWD": "CrowdStrike", "COIN": "微策略",
-    "TSM": "台積電 ADR", "QQQ": "納斯達克 ETF", "SPY": "標普500 ETF"
-}
-combined_pool = {**tw_pool, **us_pool}
-
-# =====================================================
-# 共用核心函數
-# =====================================================
-@st.cache_data(ttl=600)
-def get_realtime_fx():
-    try:
-        fx = yf.download("TWD=X", period="1d", progress=False)
-        if isinstance(fx.columns, pd.MultiIndex): fx.columns = fx.columns.droplevel(1)
-        return float(fx['Close'].iloc[-1])
-    except:
-        return 32.5 
-
-def is_us_stock(ticker):
-    return not (".TW" in ticker.upper() or ".TWO" in ticker.upper())
 
 def smart_ticker_lookup(user_input):
     user_input = str(user_input).strip().upper()
     if not user_input: return None
     if ".TW" in user_input or ".TWO" in user_input: return user_input
-    for sym, name in combined_pool.items():
+    for sym, name in daytrade_pool.items():
         if user_input in name.upper() or user_input in sym.upper(): return sym
-    if re.match(r'^[A-Z]+$', user_input): return user_input
     if user_input.isdigit(): return user_input + ".TW"
     return user_input
 
-@st.cache_data(ttl=600)
-def market_filter():
-    try:
-        twii = yf.download("^TWII", period="3mo", progress=False)
-        spy = yf.download("SPY", period="3mo", progress=False)
-        if isinstance(twii.columns, pd.MultiIndex): twii.columns = twii.columns.droplevel(1)
-        if isinstance(spy.columns, pd.MultiIndex): spy.columns = spy.columns.droplevel(1)
-        twii['20MA'] = twii['Close'].rolling(20).mean()
-        spy['20MA'] = spy['Close'].rolling(20).mean()
-        tw_status = "🟢 多頭" if twii.iloc[-1]['Close'] > twii.iloc[-1]['20MA'] else "🔴 空頭"
-        us_status = "🟢 多頭" if spy.iloc[-1]['Close'] > spy.iloc[-1]['20MA'] else "🔴 空頭"
-        return f"🇹🇼 台股: {tw_status} ｜ 🇺🇸 美股: {us_status}"
-    except:
-        return "⚪ 大盤數據讀取異常"
-
-def calculate_indicators(hist):
-    hist = hist.copy()
-    hist['5MA'] = hist['Close'].rolling(5).mean()
-    hist['10MA'] = hist['Close'].rolling(10).mean()
-    hist['20MA'] = hist['Close'].rolling(20).mean()
-    exp1 = hist['Close'].ewm(span=12, adjust=False).mean()
-    exp2 = hist['Close'].ewm(span=26, adjust=False).mean()
-    hist['MACD'] = exp1 - exp2
-    hist['Signal'] = hist['MACD'].ewm(span=9, adjust=False).mean()
-    delta = hist['Close'].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    loss = loss.replace(0, 1e-10)
-    rs = gain / loss
-    hist['RSI'] = 100 - (100 / (1 + rs))
-    hist['prev_close'] = hist['Close'].shift(1)
-    tr1 = hist['High'] - hist['Low']
-    tr2 = (hist['High'] - hist['prev_close']).abs()
-    tr3 = (hist['Low'] - hist['prev_close']).abs()
-    hist['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    hist['ATR'] = hist['TR'].rolling(14).mean()
-    hist['Recent_High20'] = hist['High'].rolling(20).max().shift(1)
-    return hist
-
-st.info(f"📊 全球大盤月線格局 ➔ {market_filter()}")
-
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 AI 雷達掃描", "🏥 個股深度診斷", "📊 實戰資產日誌", "🧪 專業回測引擎"])
+tab1, tab2, tab3 = st.tabs(["🎯 盤中爆量雷達", "📈 5分K VWAP 戰術圖表", "📊 當沖損益記帳本"])
 
 # =====================================================
-# TAB 1: AI 雷達掃描
+# TAB 1: 盤中爆量雷達
 # =====================================================
 with tab1:
-    col_s1, col_s2, col_s3 = st.columns([2, 1, 1])
-    market_choice = col_s1.radio("選擇雷達掃描市場", ["🇹🇼 台股強勢池", "🇺🇸 美股巨頭池", "🌍 全球火力全開"], horizontal=True)
-    capital_input = col_s2.number_input("設定台幣總資金 (NT$)", value=50000, step=10000)
-    current_fx = get_realtime_fx()
-    fx_rate = col_s3.number_input("即時美金匯率", value=float(current_fx), step=0.01)
+    st.markdown("### ⚡ 當沖狙擊目標過濾")
     
-    @st.cache_data(ttl=600)
-    def auto_screener(pool_choice, capital_ntd, fx):
-        if pool_choice == "🇹🇼 台股強勢池": target_pool = tw_pool
-        elif pool_choice == "🇺🇸 美股巨頭池": target_pool = us_pool
-        else: target_pool = combined_pool
-            
+    c1, c2 = st.columns(2)
+    capital_limit = c1.number_input("當沖額度上限 (元)", value=500000, step=100000)
+    rvol_limit = c2.slider("爆量倍數要求 (RVOL)", 0.5, 5.0, value=1.2, step=0.1, help="盤中量能與過去平均的倍數比")
+    
+    @st.cache_data(ttl=180) # 當沖需要快取時間短一點 (3分鐘)
+    def scan_daytrade_candidates(pool, capital, rvol_req):
         results = []
-        for sym, name in target_pool.items():
+        for sym, desc in pool.items():
             try:
-                hist = yf.download(sym, period="6mo", progress=False)
-                if hist.empty: continue
-                if isinstance(hist.columns, pd.MultiIndex): hist.columns = hist.columns.droplevel(1)
-                if len(hist) < 30: continue
+                # 抓取日線算昨日關鍵價
+                s = yf.Ticker(sym)
+                hist_1d = s.history(period="10d")
+                if len(hist_1d) < 2: continue
                 
-                hist = calculate_indicators(hist)
-                today = hist.iloc[-1]
+                yest = hist_1d.iloc[-2]
+                pivot = (yest['High'] + yest['Low'] + yest['Close']) / 3
+                r1 = (2 * pivot) - yest['Low']  # 今日壓力
+                s1 = (2 * pivot) - yest['High'] # 今日支撐
                 
-                if today['Close'] < today['20MA']: continue 
-                if today['RSI'] > 80 or today['RSI'] < 40: continue 
+                # 抓取今日即時數據
+                today = hist_1d.iloc[-1]
+                curr_price = today['Close']
                 
-                score = 0
-                if today['5MA'] > today['10MA'] > today['20MA']: score += 30
-                if today['MACD'] > today['Signal']: score += 20
-                if today['Close'] > today['Recent_High20']: score += 20
-                avg_vol_5d = hist['Volume'].rolling(5).mean().shift(1).iloc[-1]
-                if avg_vol_5d > 0 and today['Volume'] > avg_vol_5d * 1.2: score += 10
+                # 計算是否買得起整張 (當沖建議打整張)
+                cost_per_lot = curr_price * 1000
+                affordable_lots = int(capital // cost_per_lot)
+                if affordable_lots < 1: continue
                 
-                if score >= 40: 
-                    _is_us = is_us_stock(sym)
-                    currency_sym = "US$" if _is_us else "NT$"
-                    exchange_rate = fx if _is_us else 1.0
-                    
-                    entry = today['Close']
-                    stop = today['20MA'] * 0.99
-                    atr = today['ATR']
-                    buy_price = entry - (atr * 0.15) 
-                    tp = entry + (atr * 3) 
-                    
-                    risk_per_trade_ntd = capital_ntd * 0.02
-                    risk_per_share_local = (buy_price - stop) * exchange_rate
-                    if risk_per_share_local <= 0: continue
-                    shares = int(risk_per_trade_ntd // risk_per_share_local)
-                    if shares < 1: continue
-
-                    if _is_us and (shares * buy_price) < 100: continue
-
-                    win_days = (hist['High'] - hist['Open']) / hist['Open'] >= 0.01 
-                    win_rate = (win_days.sum() / len(win_days)) * 100
-                    
-                    trade_value_local = shares * buy_price * exchange_rate
-                    est_gross_profit_local = shares * (tp - buy_price) * exchange_rate
-                    
-                    if _is_us:
-                        fee_usd = (shares * buy_price) * 0.001
-                        friction_local = (fee_usd * 2) * exchange_rate 
-                    else:
-                        fee = max(1, int(trade_value_local * 0.001425 * 0.28))
-                        tax = int(trade_value_local * 0.003)
-                        friction_local = (fee * 2) + tax
-                        
-                    net_profit_local = est_gross_profit_local - friction_local
-                    if net_profit_local <= 0: continue
-                    ev_local = (win_rate/100 * est_gross_profit_local) - ((1 - win_rate/100) * (shares * (buy_price - stop) * exchange_rate))
-                    
-                    prev_close = hist['Close'].shift(1).iloc[-1]
-                    status_badge = "<span class='badge-red'>今日強勢 ⬆</span>" if today['Close'] > prev_close else "<span class='badge-green'>今日拉回 ⬇</span>"
-                    market_badge = "<span class='badge-us'>🇺🇸 美股</span>" if _is_us else "<span class='badge-gold'>🇹🇼 台股</span>"
-                    
-                    results.append({
-                        "代號": sym, "clean_sym": sym.replace('.TW', '').replace('.TWO', ''), "名稱": name, 
-                        "現價": entry, "buy_price": buy_price, "停損": stop, "tp": tp, "建議股數": shares, 
-                        "評分": score, "win_rate": win_rate, "net_profit": net_profit_local, 
-                        "friction": friction_local, "ev": ev_local, "status": status_badge,
-                        "currency": currency_sym, "market": market_badge
-                    })
+                # 爆量計算 (粗估)
+                avg_vol_5d = hist_1d['Volume'].rolling(5).mean().iloc[-2]
+                rvol = today['Volume'] / avg_vol_5d if avg_vol_5d > 0 else 1
+                if rvol < rvol_req: continue 
+                
+                # 計算 ATR (用於當沖停損)
+                hist_1d['TR'] = hist_1d['High'] - hist_1d['Low']
+                atr = hist_1d['TR'].rolling(14).mean().iloc[-1]
+                
+                # 當沖利潤精算 (手續費 2.8折，當沖交易稅減半 0.15%)
+                est_gross_profit = affordable_lots * 1000 * (atr * 0.5) # 當沖只抓半個 ATR 波動
+                fee_rate = 0.001425 * 0.28
+                friction = affordable_lots * ((curr_price * 1000 * fee_rate * 2) + (curr_price * 1000 * 0.0015))
+                net_profit = est_gross_profit - friction
+                if net_profit <= 0: continue
+                
+                # 強弱判斷
+                if curr_price > r1: status = "<span class='badge-red'>突破壓力 ⬆</span>"
+                elif curr_price < s1: status = "<span class='badge-green'>跌破支撐 ⬇</span>"
+                else: status = "<span class='badge-gray'>區間震盪 ↔</span>"
+                
+                clean_sym = sym.replace('.TW', '').replace('.TWO', '')
+                
+                results.append({
+                    "symbol": sym, "clean_sym": clean_sym, "desc": desc, "price": curr_price,
+                    "r1": r1, "s1": s1, "rvol": rvol, "lots": affordable_lots, 
+                    "net_profit": net_profit, "friction": friction, "status": status
+                })
             except: pass
-        return sorted(results, key=lambda x: x['評分'], reverse=True)
+        return sorted(results, key=lambda x: x['rvol'], reverse=True)
 
-    if st.button("🚀 啟動 AI 掃描引擎", type="primary", use_container_width=True):
-        with st.spinner("掃描全球數據，精算風控與目標價..."):
-            targets = auto_screener(market_choice, capital_input, fx_rate)
+    if st.button("🚀 啟動盤中爆量雷達", type="primary", use_container_width=True):
+        with st.spinner("掃描當沖熱門股中..."):
+            targets = scan_daytrade_candidates(daytrade_pool, capital_limit, rvol_limit)
             if targets:
-                st.success(f"🎯 嚴選 {len(targets)} 檔合規標的：")
-                for i, t in enumerate(targets):
-                    ev_color = '#FF4B4B' if t['ev'] > 0 else '#00CC96'
-                    st.markdown(f"""
-                    <div class="card">
-                        <div style="margin-bottom: 10px;">
-                            {t['market']} <span class="big-font">{t['clean_sym']} {t['名稱']}</span> &nbsp; {t['status']}
+                st.success(f"🎯 鎖定 **{len(targets)}** 檔當沖動能標的：")
+                for t in targets:
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="card">
+                            <div style="margin-bottom: 10px;">
+                                <span class="big-font">{t['clean_sym']} {t['desc']}</span> &nbsp; {t['status']}
+                            </div>
+                            <div>
+                                <b>即時股價：</b> ${t['price']:.2f} &nbsp;|&nbsp; 
+                                <b>爆量倍數：</b> <span style="color:#FF4B4B;">{t['rvol']:.1f}x</span>
+                            </div>
+                            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
+                                🎯 <b>關鍵點位：</b> 上方壓力 <span class="highlight-red">${t['r1']:.2f}</span> | 下方支撐 <span class="highlight-green">${t['s1']:.2f}</span><br>
+                                💰 <b>當沖配置：</b> 可打 <b>{t['lots']} 張</b> (估計淨利 ${t['net_profit']:,.0f} | 交易稅費 ${t['friction']:,.0f})
+                            </div>
                         </div>
-                        <div>
-                            <b>最新股價：</b> {t['currency']}{t['現價']:.2f} &nbsp;|&nbsp; 
-                            <b>歷史勝率：</b> {t['win_rate']:.0f}%
-                        </div>
-                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;">
-                            🛒 <b>紀律：</b> 買入 <span class="highlight-blue">{t['currency']}{t['buy_price']:.2f}</span> | 停利 <span class="highlight-red">{t['currency']}{t['tp']:.2f}</span> | 月線停損 <span class="highlight-green">{t['currency']}{t['停損']:.2f}</span><br>
-                            💰 <b>配置：</b> 可打 <b>{t['建議股數']} 股</b> (估淨利 NT$ {t['net_profit']:,.0f})<br>
-                            📊 <b>戰力：</b> <span style="color: #1E90FF; font-weight: bold;">{t['評分']:.1f} 分</span> (EV: <span style="color: {ev_color}; font-weight: bold;">NT$ {t['ev']:,.0f}</span>)
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.code(t['clean_sym'], language="text")
+                        """, unsafe_allow_html=True)
+                        st.caption("👇 點擊右側圖示複製代號，準備切換券商下單")
+                        st.code(t['clean_sym'], language="text")
+                        st.markdown("<br>", unsafe_allow_html=True)
             else:
-                st.warning("📉 目前無符合高勝率且合規之標的，建議空手。")
+                st.warning("📉 目前無符合條件之標的。可能剛開盤量能未出，或盤勢過於沉悶。可稍後點擊【一鍵極速刷新】。")
 
 # =====================================================
-# TAB 2: 個股深度診斷與建倉 (修復 HTML 渲染)
+# TAB 2: 5分K VWAP 戰術圖表
 # =====================================================
 with tab2:
-    st.markdown("### 🤖 跨國個股深度診斷")
+    st.markdown("### 📈 專業當沖雙視窗 (5分K + VWAP + MACD)")
     
     col1, col2, col3 = st.columns([2, 2, 1])
-    quick_select_list = ["--- 自行輸入 ---"] + [f"{k.replace('.TW','')} {v}" for k, v in combined_pool.items()]
-    quick_choice = col1.selectbox("📋 從優質股池快速選擇", quick_select_list)
-    
-    if quick_choice != "--- 自行輸入 ---":
-        default_input = quick_choice.split(" ")[0]
-    else:
-        default_input = "NVDA"
-        
-    user_input = col2.text_input("✍️ 或自行輸入代號/中文", value=default_input)
-    btn = col3.button("🧠 執行深度診斷", type="primary", use_container_width=True)
+    quick_select_list = ["--- 自行輸入 ---"] + [f"{k.replace('.TW','')} {v}" for k, v in daytrade_pool.items()]
+    quick_choice = col1.selectbox("📋 快速選擇熱門股", quick_select_list)
+    default_input = quick_choice.split(" ")[0] if quick_choice != "--- 自行輸入 ---" else "2330"
+    user_input = col2.text_input("✍️ 或自行輸入代號", value=default_input)
+    btn = col3.button("🧠 載入即時 5 分 K", type="primary", use_container_width=True)
 
     if btn:
-        st.cache_data.clear()
         parsed = smart_ticker_lookup(user_input)
-        _is_us = is_us_stock(parsed)
-        cur_sym = "US$" if _is_us else "NT$"
-        
-        with st.spinner(f"正在全方位解析 {parsed} ..."):
-            hist = yf.download(parsed, period="6mo", progress=False)
-            if not hist.empty:
-                if isinstance(hist.columns, pd.MultiIndex): hist.columns = hist.columns.droplevel(1)
+        with st.spinner(f"正在抓取 {parsed} 的 5分K 與計算 VWAP..."):
+            try:
+                s = yf.Ticker(parsed)
+                # 當沖抓最近 2 天的 5 分 K
+                hist_5m = s.history(period="2d", interval="5m")
                 
-                try: news_data = yf.Ticker(parsed).news
-                except: news_data = []
-
-                hist = calculate_indicators(hist)
-                today = hist.iloc[-1]
-
-                weekly = yf.download(parsed, period="8mo", interval="1wk", progress=False)
-                if isinstance(weekly.columns, pd.MultiIndex): weekly.columns = weekly.columns.droplevel(1)
-                weekly['20MA'] = weekly['Close'].rolling(20).mean()
-                week_trend_ok = weekly.iloc[-1]['Close'] >= weekly.iloc[-1]['20MA']
-
-                score = 0
-                if today['5MA'] > today['10MA'] > today['20MA']: score += 30
-                score += ((today['Close'] - today['20MA']) / today['20MA']) * 100
-                score += (today['MACD'] - today['Signal']) * 5
-                if 50 < today['RSI'] < 70: score += 10
-                elif today['RSI'] > 80: score -= 20
-                if today['Close'] > today['Recent_High20']: score += 25
-
-                entry = today['Close']
-                stop = today['20MA'] * 0.99
-                target = entry + today['ATR'] * 2.5
-                
-                exchange_rate = fx_rate if _is_us else 1.0
-                risk_per_trade_ntd = capital_input * 0.02
-                risk_per_share_local = (entry - stop) * exchange_rate
-                shares = int(risk_per_trade_ntd // risk_per_share_local) if risk_per_share_local > 0 else 0
-
-                if not week_trend_ok: advice, color = "🔴 嚴格禁止作多 (週線為空頭格局)", "#FF4B4B"
-                elif score > 60: advice, color = "🟢 建議佈局做多 (動能強勁)", "#00CC96"
-                elif score > 40: advice, color = "🟡 建議等待拉回 (靠近均線再行評估)", "#FFD700"
-                else: advice, color = "🔴 不建議進場 (動能疲弱)", "#FF4B4B"
-
-                flags = []
-                if today['RSI'] > 80: flags.append("短線 RSI 過熱")
-                if today['Close'] < today['20MA']: flags.append("股價跌破生命月線")
-                if not week_trend_ok: flags.append("長線 (週 20MA) 趨勢向下")
-                if _is_us and (shares * entry) < 100:
-                    flags.append(f"單筆總額不足 100 美元，不符國泰低消門檻。")
-
-                dist_to_5ma = (today['Close'] - today['5MA']) / today['5MA']
-                dist_to_20ma = (today['Close'] - today['20MA']) / today['20MA']
-                
-                # 將原先的 Markdown 改為 HTML 標籤，徹底解決手機排版衝突
-                if score < 40 or today['Close'] < today['20MA']:
-                    tactic = "⛔ <b>空手觀望</b>：目前趨勢偏空或動能不足，強烈建議保留資金，不要建倉。"
-                elif today['RSI'] > 75 or dist_to_5ma > 0.05:
-                    tactic = f"⚠️ <b>高檔分批建倉 (乖離過大)</b>：股價偏離 5MA 太遠。建議先用 <b>30% 資金（約 {max(1, int(shares*0.3))} 股）</b> 試單，剩餘掛在 10MA（{cur_sym}{today['10MA']:.1f}）等拉回低接。"
-                elif today['MACD'] > today['Signal'] and today['RSI'] <= 65 and dist_to_20ma < 0.08:
-                    tactic = f"🔥 <b>一次建倉 (黃金起漲點)</b>：動能強且距防守線近，風控極佳。建議於 <b>{cur_sym}{entry:.1f}</b> 附近，一次買齊目標 <b>{shares} 股</b>。"
-                elif today['Close'] <= today['10MA'] and today['Close'] > today['20MA']:
-                    tactic = f"🛡️ <b>左側分批接刀</b>：回測月線中。建議現價買 <b>50%（約 {max(1, int(shares*0.5))} 股）</b>，跌至 20MA（{cur_sym}{today['20MA']:.1f}）再加碼。跌破 20MA 全停損。"
-                else:
-                    tactic = f"⚖️ <b>震盪試單</b>：走勢震盪，建議先打 <b>50% 資金（約 {max(1, int(shares*0.5))} 股）</b> 試水溫，突破前高再加碼。"
-
-                stock_name = combined_pool.get(parsed, parsed.replace('.TW','').replace('.TWO',''))
-                market_tag = "🇺🇸" if _is_us else "🇹🇼"
-                
-                # 解決亂碼問題：完全移除 HTML 字串內的空行，並加入 flex-wrap
-                st.markdown(f"""
-                <div class="report-card">
-                    <h3 style="margin-top:0;">{market_tag} {stock_name} 戰略診斷報告</h3>
-                    <div style="background-color: {color}22; border-left: 5px solid {color}; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                        <span style="font-size: 18px; color: {color}; font-weight: bold;">{advice} (AI 評分: {score:.1f}/100)</span>
-                    </div>
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <div class="metric-box"><b>現價/進場區</b><br><span style="color:#1E90FF; font-size:18px;">{cur_sym}{entry:.1f}</span></div>
-                        <div class="metric-box"><b>防守停損價</b><br><span style="color:#00CC96; font-size:18px;">{cur_sym}{stop:.1f}</span></div>
-                        <div class="metric-box"><b>波段目標價</b><br><span style="color:#FF4B4B; font-size:18px;">{cur_sym}{target:.1f}</span></div>
-                        <div class="metric-box"><b>2%風控可買</b><br><span style="color:#FFD700; font-size: 18px; font-weight: bold;">{shares} 股</span></div>
-                    </div>
-                    <div class="tactic-box">
-                        <h4 style="margin-top:0; color:#FF8C00;">🛒 AI 資金建倉兵法</h4>
-                        <span style="font-size:16px;">{tactic}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                if flags:
-                    for f in flags: st.error(f"⚠ {f}")
-                else:
-                    st.success("✅ 目前技術面與風控皆完美符合做多紀律！")
-
-                st.markdown("#### 📊 專業技術圖表檢視")
-                
-                # 
-                
-                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
-                fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name='日K'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=hist.index, y=hist['10MA'], name='10MA', line=dict(color='#FFD700', width=1)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=hist.index, y=hist['20MA'], name='20MA (月線)', line=dict(color='#9B59B6', width=2)), row=1, col=1)
-                
-                macd_colors = ['#FF4B4B' if val > 0 else '#00CC96' for val in (hist['MACD'] - hist['Signal'])]
-                
-                # --- 修復重點：完成中斷的 MACD 繪圖邏輯 ---
-                fig.add_trace(go.Bar(x=hist.index, y=(hist['MACD'] - hist['Signal']), marker_color=macd_colors, name='MACD 柱狀圖'), row=2, col=1)
-                fig.add_trace(go.Scatter(x=hist.index, y=hist['MACD'], name='MACD', line=dict(color='#1E90FF', width=1)), row=2, col=1)
-                fig.add_trace(go.Scatter(x=hist.index, y=hist['Signal'], name='Signal', line=dict(color='#FF8C00', width=1)), row=2, col=1)
-
-                fig.update_layout(height=650, margin=dict(l=0, r=0, t=30, b=0), showlegend=False, 
-                                  xaxis_rangeslider_visible=False, template="plotly_dark")
-                
-                # 渲染圖表
-                st.plotly_chart(fig, use_container_width=True)
-
-                # 顯示相關新聞 (如果有撈取到的話)
-                if news_data:
-                    st.markdown("#### 📰 相關市場新聞")
-                    for news in news_data[:3]:
-                        title = news.get('title', '無標題新聞')
-                        link = news.get('link', '#')
-                        st.markdown(f"<div class='news-box'>🔗 <a href='{link}' target='_blank' style='color: #1E90FF; text-decoration: none;'>{title}</a></div>", unsafe_allow_html=True)
+                if not hist_5m.empty:
+                    # 分離出「今天」的數據來獨立計算 VWAP
+                    today_date = hist_5m.index[-1].date()
+                    today_data = hist_5m[hist_5m.index.date == today_date].copy()
+                    
+                    if not today_data.empty:
+                        # 1. 計算今日 VWAP (當沖靈魂)
+                        today_data['Typical'] = (today_data['High'] + today_data['Low'] + today_data['Close']) / 3
+                        today_data['VWAP'] = (today_data['Typical'] * today_data['Volume']).cumsum() / today_data['Volume'].cumsum()
                         
-            else:
-                st.error("📉 找不到該標的之歷史資料，請確認代碼是否輸入正確。")
+                        # 2. 計算 5分 K 的 MACD
+                        exp1 = today_data['Close'].ewm(span=12, adjust=False).mean()
+                        exp2 = today_data['Close'].ewm(span=26, adjust=False).mean()
+                        today_data['MACD'] = exp1 - exp2
+                        today_data['Signal'] = today_data['MACD'].ewm(span=9, adjust=False).mean()
+                        today_data['Hist'] = today_data['MACD'] - today_data['Signal']
+                        
+                        curr_price = today_data['Close'].iloc[-1]
+                        last_vwap = today_data['VWAP'].iloc[-1]
+                        
+                        # 當沖戰略判定
+                        if curr_price > last_vwap:
+                            trend_desc = "🟢 大戶偏多 (股價在 VWAP 之上)"
+                            action = "建議【順勢做多】，以 VWAP 作為短線停損防守線。"
+                            box_color = "#00CC96"
+                        elif curr_price < last_vwap:
+                            trend_desc = "🔴 大戶偏空 (股價在 VWAP 之下)"
+                            action = "建議【順勢做空】或【空手觀望】，若反彈突破 VWAP 再翻多。"
+                            box_color = "#FF4B4B"
+                        else:
+                            trend_desc = "🟡 多空交戰 (黏著 VWAP)"
+                            action = "盤整中，等待帶量脫離 VWAP 表態。"
+                            box_color = "#FFD700"
+
+                        stock_name = daytrade_pool.get(parsed, parsed.replace('.TW',''))
+                        
+                        st.markdown(f"""
+                        <div class="report-card" style="border-top: 5px solid {box_color};">
+                            <h3 style="margin-top:0;">{stock_name} 盤中 VWAP 戰情</h3>
+                            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                <div class="metric-box" style="flex: 1;"><b>即時現價</b><br><span style="font-size:20px;">${curr_price:.2f}</span></div>
+                                <div class="metric-box" style="flex: 1;"><b>VWAP 均價線</b><br><span class="highlight-vwap" style="font-size:20px;">${last_vwap:.2f}</span></div>
+                                <div class="metric-box" style="flex: 1;"><b>距離 VWAP</b><br><span style="color:{box_color}; font-size:20px;">{((curr_price-last_vwap)/last_vwap)*100:.2f}%</span></div>
+                            </div>
+                            <div style="background-color: #2b2b2b; padding: 10px; border-radius: 5px;">
+                                <b>戰術指示：</b><span style="color: {box_color};">{trend_desc}</span> ➔ {action}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # 繪製專業當沖雙層圖表
+                        st.markdown("#### 📊 5分K 狙擊圖表")
+                        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
+                        
+                        # 主圖：5分K 與 VWAP
+                        fig.add_trace(go.Candlestick(x=today_data.index, open=today_data['Open'], high=today_data['High'], low=today_data['Low'], close=today_data['Close'], name='5分K'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['VWAP'], name='VWAP (主力成本)', line=dict(color='#9B59B6', width=2)), row=1, col=1)
+                        
+                        # 副圖：MACD
+                        macd_colors = ['#FF4B4B' if val > 0 else '#00CC96' for val in today_data['Hist']]
+                        fig.add_trace(go.Bar(x=today_data.index, y=today_data['Hist'], marker_color=macd_colors, name='MACD柱'), row=2, col=1)
+                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['MACD'], line=dict(color='#1E90FF', width=1), name='MACD'), row=2, col=1)
+                        fig.add_trace(go.Scatter(x=today_data.index, y=today_data['Signal'], line=dict(color='#FFD700', width=1), name='Signal'), row=2, col=1)
+
+                        fig.update_layout(height=600, margin=dict(l=0,r=0,t=10,b=0), xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, template="plotly_dark", hovermode="x unified")
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("今日尚無交易數據。")
+            except Exception as e:
+                st.error("無法取得即時資料，可能是網路延遲或代號錯誤。")
 
 # =====================================================
-# TAB 3: 實戰資產日誌 (補齊結構)
+# TAB 3: 當沖損益記帳本
 # =====================================================
 with tab3:
-    st.markdown("### 📊 實戰資產日誌")
-    st.info("💡 此區塊目前為展示用數據。未來可串接資料庫（如 SQLite 或 Google Sheets）來記錄你真實的交易點位與損益。")
+    st.markdown("### 🏆 每日當沖實戰損益紀錄")
+    LOG_FILE = "daytrade_log.csv"
+    if os.path.exists(LOG_FILE): df = pd.read_csv(LOG_FILE)
+    else: df = pd.DataFrame({"日期":[datetime.now().strftime('%Y-%m-%d')], "操作":["多/空"], "標的":["2330"], "當沖淨利(NTD)":[0]})
+
+    total_pnl = df["當沖淨利(NTD)"].sum()
     
-    mock_data = pd.DataFrame({
-        "交易日": ["2026-02-20", "2026-02-23"],
-        "市場": ["🇹🇼 台股", "🇺🇸 美股"],
-        "代號": ["2330.TW", "NVDA"],
-        "買入均價": [850, 120],
-        "持有股數": [1000, 50],
-        "當前市價": [875, 128],
-        "未實現損益": ["+25,000", "+400"]
-    })
-    st.dataframe(mock_data, use_container_width=True, hide_index=True)
+    c1, c2 = st.columns(2)
+    c1.metric("當沖累計總淨利", f"NT$ {total_pnl:,.0f}")
+    c2.metric("交易筆數", f"{len(df)-1} 筆") # 扣掉初始紀錄
 
-# =====================================================
-# TAB 4: 專業回測引擎 (補齊結構)
-# =====================================================
-with tab4:
-    st.markdown("### 🧪 專業回測引擎")
-    st.warning("🚧 此模組尚在開發中。未來將支援自定義策略（例如：5MA 上穿 20MA、RSI 黃金交叉）的歷史勝率回測功能。")
-
+    edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    if not edited.equals(df):
+        edited.to_csv(LOG_FILE, index=False)
+        st.success("✅ 當沖紀錄已儲存！")
+    
+    if len(edited) > 1:
+        edited['累計獲利'] = edited['當沖淨利(NTD)'].cumsum()
+        fig_log = px.bar(edited, x='日期', y='當沖淨利(NTD)', title="每日當沖損益柱狀圖", color='當沖淨利(NTD)', color_continuous_scale=['#00CC96', '#FF4B4B'])
+        fig_log.update_layout(template="plotly_dark", yaxis_title="淨利 (NT$)")
+        st.plotly_chart(fig_log, use_container_width=True)
